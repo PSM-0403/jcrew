@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { MemberAvatar }     from "../../components/Common";
-import { callClaude }       from "../../api/claude";
+import { callGemini }       from "../../api/gemini";
 import { COLORS, LEVEL_COLOR } from "../../constants";
 
 // ── 회원: 홈 ──────────────────────────────────────────────
@@ -527,24 +527,16 @@ export function MemberChatbot({ member, classes }) {
       const c = classes.find(c => c.id === id);
       return c ? `${c.title}(${c.days?.join("·")})` : null;
     }).filter(Boolean).join(", ");
+
     const systemPrompt = `당신은 제이크루 농구교실 AI 챗봇입니다.
 현재 회원 정보:
 - 이름: ${member.name}
 - 출석률: ${member.attendance}%, 수강료: ${member.paid ? "납부완료" : "미납"}
 - 수강 중인 수업: ${myClassTitles || "없음"}
 - 신청 가능한 수업: ${classes.filter(c => !(member.classes ?? []).includes(c.id) && c.enrolled < c.capacity).map(c => c.title).join(", ")}
+회원의 질문에 친근하게 2~3문장으로 한국어로 답변하세요.`;
 
-회원의 질문에 친근하게 2~3문장으로 답변하세요.`;
-
-    await new Promise(r => setTimeout(r, 900));
-    const MOCK_REPLIES = [
-      `안녕하세요! 궁금하신 내용 확인했습니다. 출석률은 현재 ${member.attendance}%로 ${member.attendance >= 70 ? "양호한 편입니다 👍" : "조금 아쉽네요. 꾸준히 참석해 보세요!"}`,
-      "수강료 관련 문의는 강사님께 직접 연락하시거나 카카오 채널을 이용해 주세요! 빠르게 답변해 드릴게요 😊",
-      "보강 신청은 '내 수업' 탭에서 결석한 수업 옆 보강 신청 버튼을 누르시면 AI가 최적 수업을 추천해 드립니다 🏀",
-      "제이크루 농구교실은 초등/중등/고등/성인반으로 나뉘어 운영되고 있습니다. 더 궁금한 점 있으시면 편하게 물어보세요!",
-      "네, 확인했습니다! 추가로 궁금하신 점이 있으시면 언제든지 질문해 주세요 😄",
-    ];
-    const reply = MOCK_REPLIES[Math.floor(Math.random() * MOCK_REPLIES.length)];
+    const reply = await callGemini(userMsg, systemPrompt);
     setMessages(prev => [...prev, { role: "agent", text: reply }]);
     setLoading(false);
   };

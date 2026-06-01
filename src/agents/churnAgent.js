@@ -1,24 +1,25 @@
 // ── 에이전트 ① 이탈 위험 감지 ────────────────────────────
+import { callGemini } from "../api/gemini";
 
 export async function runChurnAgent(members, { addLog }) {
   addLog("🤖 [이탈 감지 에이전트] 시작", "start");
   addLog("📊 전체 회원 출석·납부 데이터 스캔 중...", "info");
-  await delay(800);
 
-  const riskMembers = members.filter(m => m.attendance < 60 || !m.paid);
+  const riskMembers = members.filter(m => m.attendance < 70 || !m.paid);
   addLog(`⚠ 위험 회원 ${riskMembers.length}명 감지`, "warn");
-  await delay(600);
-
   addLog("🧠 AI — 위험도 판단 중...", "think");
-  await delay(1000);
 
-  const result = `[높음] 이서연 — 출석률 48%, 수강료 미납 상태. 즉시 연락 필요.
-[높음] 최아린 — 출석률 40%, 수강료 미납. 이탈 가능성 매우 높음.
-[보통] 한지민 — 출석률 55%, 수강료 미납. 꾸준한 관심 필요.
+  const memberData = riskMembers.map(m =>
+    `- ${m.name}: 출석률 ${m.attendance}%, 수강료 ${m.paid ? "납부" : "미납"}`
+  ).join("\n");
 
-→ 미납 회원 3명에게 이번 주 내 개별 연락을 권장합니다. 출석률 저조 회원은 수업 참여 동기 파악이 필요합니다.`;
+  const prompt = `다음은 농구교실 위험 회원 목록입니다:\n${memberData}\n\n각 회원의 이탈 위험도(높음/보통/낮음)를 판단하고, 강사가 취해야 할 구체적인 조치를 제안해주세요. 한국어로 간결하게 작성하세요.`;
 
-  addLog("✅ 분석 완료 — 강사에게 알림 발송", "done");
+  const result = riskMembers.length === 0
+    ? "현재 이탈 위험 회원이 없습니다. 모든 회원이 양호한 상태입니다! 👍"
+    : await callGemini(prompt, "당신은 농구교실 운영을 돕는 AI 에이전트입니다.");
+
+  addLog("✅ 분석 완료", "done");
 
   const updatedMembers = members.map(m => ({
     ...m,
@@ -27,5 +28,3 @@ export async function runChurnAgent(members, { addLog }) {
 
   return { result, updatedMembers };
 }
-
-const delay = ms => new Promise(r => setTimeout(r, ms));

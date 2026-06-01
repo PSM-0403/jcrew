@@ -1,17 +1,26 @@
 // ── 에이전트 ③ 피드백 자동 생성 ──────────────────────────
+import { callGemini } from "../api/gemini";
 
 export async function runFeedbackAgent(cls, attendedMembers, memo, { addLog }) {
-  addLog(`🤖 [피드백 에이전트] ${cls?.title} 수업 종료`, "start");
+  addLog(`🤖 [피드백 에이전트] ${cls?.title} 수업`, "start");
   addLog(`👥 출석 회원 ${attendedMembers.length}명 확인`, "info");
-  addLog("✍️ 강사 메모 기반 개인별 피드백 생성 중...", "think");
-  await delay(1200);
+  addLog("✍️ 개인별 피드백 생성 중...", "think");
 
-  const feedbacks = attendedMembers.length > 0
-    ? attendedMembers.map(m => `[${m.name}]\n오늘 수업 정말 열심히 참여해줬어요! 특히 드리블 동작이 지난번보다 훨씬 안정적으로 보였습니다. 다음 수업에서는 패스 타이밍을 조금 더 신경써보면 더욱 발전할 수 있을 것 같아요. 계속 이 열정 유지해주세요! 💪`).join("\n\n")
-    : "출석 회원이 없습니다.";
+  if (attendedMembers.length === 0) {
+    addLog("출석 회원 없음", "warn");
+    return { result: "출석 회원이 없습니다." };
+  }
 
-  addLog("📱 회원별 피드백 자동 발송 완료", "done");
-  return { result: feedbacks };
+  const names = attendedMembers.map(m => m.name).join(", ");
+  const prompt = `농구 수업 피드백을 작성해주세요.
+수업명: ${cls?.title}
+출석 회원: ${names}
+강사 메모: ${memo || "없음"}
+
+각 회원에게 보낼 격려와 개선점이 담긴 짧은 피드백을 작성해주세요. 따뜻하고 동기부여가 되는 톤으로, 이름을 포함해 개인별로 작성해주세요.`;
+
+  const result = await callGemini(prompt, "당신은 농구교실 전문 코치입니다. 회원들에게 긍정적이고 구체적인 피드백을 제공합니다.");
+
+  addLog("✅ 피드백 생성 완료", "done");
+  return { result };
 }
-
-const delay = ms => new Promise(r => setTimeout(r, ms));
