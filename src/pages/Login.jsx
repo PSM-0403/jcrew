@@ -92,7 +92,7 @@ export function LoginPage({ onCoach, onMember, onSignup, members }) {
             {isCoachMode ? "관리자/강사 로그인" : "회원 로그인"}
           </div>
           <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 20 }}>
-            {isMemberMode ? "이름과 비밀번호를 입력해주세요" : "비밀번호를 입력해주세요"}
+            {isMemberMode ? "이름과 연락처 뒷 4자리를 입력해주세요" : "비밀번호를 입력해주세요"}
           </div>
 
           {isMemberMode && (
@@ -179,13 +179,10 @@ export function SignupPage({ onSignup, onBack }) {
         <h2 style={{ color: "#fff", fontSize: 20, fontWeight: 700, margin: "0 0 4px" }}>회원 가입</h2>
         <p style={{ color: "#8899AA", fontSize: 13, marginBottom: 24 }}>제이크루 농구교실에 오신 걸 환영합니다</p>
 
-        {/* 이름 */}
         <Field label="이름">
-          <input value={form.name} onChange={e => set("name", e.target.value)}
-            placeholder="홍길동" style={inputStyle} />
+          <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="홍길동" style={inputStyle} />
         </Field>
 
-        {/* 성별 */}
         <Field label="성별">
           <div style={{ display: "flex", gap: 8 }}>
             {["남", "여"].map(g => (
@@ -200,14 +197,12 @@ export function SignupPage({ onSignup, onBack }) {
           </div>
         </Field>
 
-        {/* 비밀번호 */}
         <Field label="비밀번호">
           <input type="password" value={form.password} onChange={e => set("password", e.target.value)}
             placeholder="비밀번호 설정" style={inputStyle} />
           <div style={{ fontSize: 11, color: "#8899AA", marginTop: 4 }}>숫자 4자리로 설정해주세요 (예: 1234)</div>
         </Field>
 
-        {/* 비밀번호 확인 */}
         <Field label="비밀번호 확인">
           <input type="password" value={form.passwordConfirm} onChange={e => set("passwordConfirm", e.target.value)}
             placeholder="비밀번호 재입력"
@@ -217,7 +212,6 @@ export function SignupPage({ onSignup, onBack }) {
           )}
         </Field>
 
-        {/* 구분 — 성인/학생에 따라 연락처 다르게 */}
         <Field label="구분">
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {SCHOOL_LEVELS.map(l => (
@@ -232,7 +226,6 @@ export function SignupPage({ onSignup, onBack }) {
           </div>
         </Field>
 
-        {/* 학년 — 학생만 표시 */}
         {!isAdult && (
           <Field label="학년">
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -249,7 +242,6 @@ export function SignupPage({ onSignup, onBack }) {
           </Field>
         )}
 
-        {/* 연락처 — 성인: 본인만 / 학생: 부모님 + 학생 */}
         {isAdult ? (
           <Field label="본인 연락처">
             <input value={form.parentPhone} onChange={e => set("parentPhone", e.target.value)}
@@ -268,7 +260,6 @@ export function SignupPage({ onSignup, onBack }) {
           </>
         )}
 
-        {/* 학교 이름 — 학생만 표시 */}
         {!isAdult && (
           <Field label="학교 이름 (선택)">
             <input value={form.schoolName} onChange={e => set("schoolName", e.target.value)}
@@ -276,14 +267,12 @@ export function SignupPage({ onSignup, onBack }) {
           </Field>
         )}
 
-        {/* 특이사항 */}
         <Field label="특이사항 (선택)">
           <textarea value={form.note} onChange={e => set("note", e.target.value)}
             placeholder="예: 무릎 부상 이력, 천식, 알레르기 등"
             style={{ ...inputStyle, minHeight: 80, resize: "vertical", lineHeight: 1.6 }} />
         </Field>
 
-        {/* 셔틀 */}
         <Field label="셔틀 버스">
           <div style={{ display: "flex", gap: 8 }}>
             {[{ label: "필요", val: true }, { label: "불필요", val: false }].map(opt => (
@@ -298,7 +287,6 @@ export function SignupPage({ onSignup, onBack }) {
           </div>
         </Field>
 
-        {/* 주소 — 셔틀 필요 시만 표시 */}
         {form.shuttle && (
           <Field label="주소">
             <input value={form.address} onChange={e => set("address", e.target.value)}
@@ -319,7 +307,7 @@ export function SignupPage({ onSignup, onBack }) {
 
 function ContactItem({ icon, label, value, href }) {
   const content = (
-    <div style={{ background: "#ffffff08", borderRadius: 10, padding: "10px 12px", cursor: href ? "pointer" : "default" }}>
+    <div style={{ background: "#ffffff08", borderRadius: 10, padding: "10px 12px", cursor: href ? "pointer" : "default", textAlign: "center" }}>
       <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 3 }}>{icon} {label}</div>
       <div style={{ fontSize: 12, color: href ? "#FCD34D" : "#CBD5E1", lineHeight: 1.5 }}>{value}</div>
     </div>
