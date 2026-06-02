@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { fetchPendingPayments } from '../api/db';
+import { fetchPendingPayments, fetchMakeupRequests } from '../api/db';
 
 export const useAppStore = create((set) => ({
   role:            null,
@@ -10,6 +10,7 @@ export const useAppStore = create((set) => ({
   toast:           null,
   feedback:        {},
   pendingPayments: [],
+  makeupRequests:  [],
 
   setRole:       (role)    => set({ role }),
   setShowSignup: (v)       => set({ showSignup: v }),
@@ -27,9 +28,13 @@ export const useAppStore = create((set) => ({
     const data = await fetchPendingPayments();
     set({ pendingPayments: data });
   },
+  addPendingPayment:    (entry) => set(state => ({ pendingPayments: [...state.pendingPayments, entry] })),
+  removePendingPayment: (id)    => set(state => ({ pendingPayments: state.pendingPayments.filter(p => p.id !== id) })),
 
-  addPendingPayment: (entry) =>
-    set(state => ({ pendingPayments: [...state.pendingPayments, entry] })),
-  removePendingPayment: (id) =>
-    set(state => ({ pendingPayments: state.pendingPayments.filter(p => p.id !== id) })),
+  loadMakeupRequests: async () => {
+    const data = await fetchMakeupRequests();
+    set({ makeupRequests: data });
+  },
+  addMakeupRequest:    (entry) => set(state => ({ makeupRequests: [...state.makeupRequests, entry] })),
+  removeMakeupRequest: (id)    => set(state => ({ makeupRequests: state.makeupRequests.filter(r => r.id !== id) })),
 }));

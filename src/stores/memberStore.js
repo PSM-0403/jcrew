@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import {
   fetchMembers, fetchPendingMembers,
   insertMember, approveMember, rejectMember,
-  updateMemberPaid, updateMemberNote, addPayment,
+  updateMemberPaid, updateMemberNote, addPayment, deleteMember, updateMemberGender,
 } from '../api/db';
 import { useAppStore } from './appStore';
 
@@ -84,6 +84,32 @@ export const useMemberStore = create((set, get) => ({
     } catch {
       set({ members: prevMembers });
       toast('저장 실패', 'err');
+    }
+  },
+
+  // 성별 수정: 낙관적 + 롤백
+  updateGender: async (mId, gender) => {
+    const prev = get().members;
+    set(state => ({ members: state.members.map(m => m.id === mId ? { ...m, gender } : m) }));
+    try {
+      await updateMemberGender(mId, gender);
+    } catch {
+      set({ members: prev });
+      toast('저장 실패', 'err');
+    }
+  },
+
+  // 회원 삭제: 낙관적 + 롤백
+  deleteMember: async (mId) => {
+    const prevMembers = get().members;
+    const m = get().members.find(m => m.id === mId);
+    set(state => ({ members: state.members.filter(m => m.id !== mId) }));
+    try {
+      await deleteMember(mId);
+      toast(`${m?.name}님이 삭제되었습니다.`, 'err');
+    } catch {
+      set({ members: prevMembers });
+      toast('삭제 실패', 'err');
     }
   },
 

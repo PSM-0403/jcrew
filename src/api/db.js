@@ -17,7 +17,7 @@ function toMember(row, enrollments = [], payments = []) {
     schoolLevel: row.school_level ?? '',
     schoolName: row.school_name ?? '',
     grade: row.grade ?? '',
-    birthdate: row.birthdate ?? '',
+    gender: row.gender ?? '',
     classes: enrollments.filter(e => e.member_id === row.id).map(e => e.class_id),
     paymentHistory: payments
       .filter(p => p.member_id === row.id)
@@ -73,7 +73,7 @@ export async function insertMember(data) {
     category: data.schoolLevel || data.category || '성인',
     school_level: data.schoolLevel ?? '',
     grade: data.grade ?? '',
-    birthdate: data.birthdate || null,
+    gender: data.gender ?? '',
     paid: false,
     attendance: 100,
     note: data.note ?? '',
@@ -94,6 +94,16 @@ export async function rejectMember(id) {
 
 export async function updateMemberPaid(id, paid) {
   const { error } = await supabase.from('members').update({ paid }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function updateMemberGender(id, gender) {
+  const { error } = await supabase.from('members').update({ gender }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteMember(id) {
+  const { error } = await supabase.from('members').update({ status: 'deleted' }).eq('id', id);
   if (error) throw error;
 }
 
@@ -233,6 +243,89 @@ export async function deleteNotice(id) {
   if (error) throw error;
 }
 
+// ── Makeup Requests (보강 신청) ───────────────────────────────
+
+export async function fetchMakeupRequests() {
+  const { data, error } = await supabase
+    .from('makeup_requests').select('*').eq('status', 'pending').order('created_at');
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function insertMakeupRequest({ memberId, memberName, classId, classTitle, preferredDate, preferredTime, note }) {
+  const { error } = await supabase.from('makeup_requests').insert({
+    member_id: memberId, member_name: memberName,
+    class_id: classId, class_title: classTitle,
+    preferred_date: preferredDate || null,
+    preferred_time: preferredTime || '',
+    note: note || '',
+  });
+  if (error) throw error;
+}
+
+export async function fetchMemberAttendance(memberId) {
+  const { data, error } = await supabase
+    .from('attendance')
+    .select('class_id, date, status')
+    .eq('member_id', memberId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  const grouped = {};
+  for (const row of data ?? []) {
+    if (!grouped[row.class_id]) grouped[row.class_id] = [];
+    grouped[row.class_id].push({ date: row.date, status: row.status });
+  }
+  return grouped;
+}
+
+export async function fetchMemberAbsences(memberId) {
+  const { data, error } = await supabase
+    .from('attendance')
+    .select('class_id, date')
+    .eq('member_id', memberId)
+    .eq('status', '결석')
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchMemberMakeupCount(memberId) {
+  const { data, error } = await supabase
+    .from('makeup_requests')
+    .select('class_id')
+    .eq('member_id', memberId)
+    .in('status', ['assigned', 'done']); // 강사가 배정 완료한 것만 차감
+  if (error) throw error;
+  const counts = {};
+  for (const r of data ?? []) {
+    counts[r.class_id] = (counts[r.class_id] ?? 0) + 1;
+  }
+  return counts;
+}
+
+export async function assignMakeupRequest(id, { assignedClassId, assignedDate, assignedMemo }) {
+  const { error } = await supabase.from('makeup_requests').update({
+    status: 'assigned',
+    assigned_class_id: assignedClassId || null,
+    assigned_date: assignedDate || null,
+    assigned_memo: assignedMemo || '',
+  }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchAssignedMakeups(memberId) {
+  const { data, error } = await supabase.from('makeup_requests')
+    .select('*').eq('member_id', memberId).eq('status', 'assigned')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function acknowledgeMakeup(id) {
+  const { error } = await supabase.from('makeup_requests').update({ status: 'done' }).eq('id', id);
+  if (error) throw error;
+}
+
 // ── Pending Payments (계좌이체 대기) ─────────────────────────
 
 export async function fetchPendingPayments() {
@@ -264,6 +357,12 @@ export async function deletePendingPayment(id) {
 
 export async function saveAttendance(memberId, classId, status, date) {
   const d = date ?? new Date().toISOString().split('T')[0];
+  if (!status) {
+    const { error } = await supabase.from('attendance')
+      .delete().eq('member_id', memberId).eq('class_id', classId).eq('date', d);
+    if (error) throw error;
+    return;
+  }
   const { error } = await supabase.from('attendance').upsert(
     { member_id: memberId, class_id: classId, date: d, status },
     { onConflict: 'member_id,class_id,date' }

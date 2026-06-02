@@ -5,7 +5,7 @@ import { useMemberStore }      from "./stores/memberStore";
 import { useClassStore }       from "./stores/classStore";
 import { useAttendanceStore }  from "./stores/attendanceStore";
 
-import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment } from "./api/db";
+import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment, insertMakeupRequest, assignMakeupRequest } from "./api/db";
 
 import { Toast, TabBar }   from "./components/Common";
 import { LoginPage, SignupPage } from "./pages/Login";
@@ -18,22 +18,21 @@ import {
 } from "./pages/member/MemberPages";
 import { GalleryPage } from "./pages/GalleryPage";
 
-import { runMakeupAgent } from "./agents/makeupAgent";
 import { COLORS }         from "./constants";
 import logo               from "./assets/logo.png";
 
 export default function App() {
   // ── 스토어 ────────────────────────────────────────────────
   const {
-    role, showSignup, tab, memberId, loading, toast, feedback, pendingPayments,
+    role, showSignup, tab, memberId, loading, toast, feedback, pendingPayments, makeupRequests,
     setRole, setShowSignup, setTab, setMemberId, setLoading, showToast, setFeedback,
-    addPendingPayment, removePendingPayment,
+    addPendingPayment, removePendingPayment, loadMakeupRequests, addMakeupRequest, removeMakeupRequest,
   } = useAppStore();
 
   const {
     members, pendingMembers,
     signup, approve, reject, togglePaid, updateNote,
-    updateMemberClasses, updatePaidState, setMembers,
+    updateMemberClasses, updatePaidState, setMembers, deleteMember, updateGender,
   } = useMemberStore();
 
   const { classes, addClass, updateClass, deleteClass, updateEnrolled } = useClassStore();
@@ -51,6 +50,7 @@ export default function App() {
           useClassStore.getState().load(),
           useAttendanceStore.getState().load(),
           useAppStore.getState().loadPendingPayments(),
+          useAppStore.getState().loadMakeupRequests(),
         ]);
       } catch {
         showToast("데이터 로드 실패. 새로고침 해주세요.", "err");
@@ -122,6 +122,27 @@ export default function App() {
     }
   };
 
+  const handleMakeupRequest = async (form) => {
+    try {
+      await insertMakeupRequest({ ...form, memberId: me.id, memberName: me.name });
+      await loadMakeupRequests();
+      showToast("보강 신청이 접수됐습니다. 강사 확인 후 배정됩니다.");
+    } catch {
+      showToast("신청 실패. 다시 시도해주세요.", "err");
+    }
+  };
+
+  const handleAssignMakeup = async (id, assignmentData) => {
+    removeMakeupRequest(id);
+    try {
+      await assignMakeupRequest(id, assignmentData);
+      showToast("보강 배정 완료!");
+    } catch {
+      await loadMakeupRequests();
+      showToast("처리 실패", "err");
+    }
+  };
+
   const handleCancel = async (classId) => {
     const cls = classes.find(c => c.id === classId);
     updateMemberClasses(memberId, classId, false);
@@ -134,14 +155,6 @@ export default function App() {
       updateEnrolled(classId, 1);
       showToast("취소 실패", "err");
     }
-  };
-
-  const handleMakeup = async (mId, classId, prefs = {}) => {
-    const member = members.find(m => m.id === mId);
-    const cls    = classes.find(c => c.id === classId);
-    const result = await runMakeupAgent(member, cls, classes, { addLog: () => {} }, prefs);
-    showToast("보강 매칭 에이전트 실행 완료!");
-    return result;
   };
 
   // ── 화면 분기 ─────────────────────────────────────────────
@@ -213,17 +226,17 @@ export default function App() {
 
       <div style={{ padding: "16px 20px", maxWidth: 720, margin: "0 auto" }}>
         {/* ── 강사 ── */}
-        {isCoach && tab === "home"       && <CoachDashboard members={members} classes={classes} pendingMembers={pendingMembers} onApprove={approve} onReject={reject} onTogglePaid={togglePaid} pendingPayments={pendingPayments} onConfirmPayment={handleConfirmPayment} />}
+        {isCoach && tab === "home"       && <CoachDashboard members={members} classes={classes} pendingMembers={pendingMembers} onApprove={approve} onReject={reject} onTogglePaid={togglePaid} pendingPayments={pendingPayments} onConfirmPayment={handleConfirmPayment} makeupRequests={makeupRequests} onAssignMakeup={handleAssignMakeup} />}
         {isCoach && tab === "attendance" && <CoachAttendance members={members} classes={classes} attendance={attendance} cancellations={cancellations} year={year} month={month} onMark={mark} onCancellation={setCancellation} onMonthChange={setMonth} onFeedback={(cId, r) => setFeedback(p => ({ ...p, [cId]: r }))} feedback={feedback} />}
         {isCoach && tab === "classes"    && <CoachClasses classes={classes} onAdd={addClass} onUpdate={updateClass} onDelete={deleteClass} />}
-        {isCoach && tab === "members"    && <CoachMembers members={members} classes={classes} onTogglePaid={togglePaid} onAssign={handleAssignClass} onUpdateNote={updateNote} />}
+        {isCoach && tab === "members"    && <CoachMembers members={members} classes={classes} onTogglePaid={togglePaid} onAssign={handleAssignClass} onUpdateNote={updateNote} onDelete={deleteMember} onUpdateGender={updateGender} />}
         {isCoach && tab === "gallery"    && <GalleryPage classes={classes} isCoach />}
         {isCoach && tab === "agent"      && <CoachAgentPanel members={members} classes={classes} onMembersUpdate={setMembers} />}
         {isCoach && tab === "notice"     && <NoticePage isCoach showToast={showToast} />}
 
         {/* ── 회원 ── */}
         {!isCoach && tab === "home"    && <MemberHome member={me} classes={classes} onBankPayment={handleBankPaymentRequest} onCardPayment={handleCardPayment} />}
-        {!isCoach && tab === "my"      && <MemberMyClasses member={me} classes={classes} onCancel={handleCancel} onMakeup={handleMakeup} />}
+        {!isCoach && tab === "my"      && <MemberMyClasses member={me} classes={classes} onCancel={handleCancel} onMakeupRequest={handleMakeupRequest} />}
         {!isCoach && tab === "gallery" && <GalleryPage classes={classes.filter(c => (me?.classes ?? []).includes(c.id))} isCoach={false} />}
         {!isCoach && tab === "chat"    && <MemberChatbot member={me} classes={classes} />}
         {!isCoach && tab === "notice"  && <NoticePage isCoach={false} showToast={showToast} />}

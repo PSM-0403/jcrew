@@ -5,13 +5,13 @@ import logo from "../assets/logo.png";
 const COACH_PASSWORD = "jcrew1234";
 
 export function LoginPage({ onCoach, onMember, onSignup, members }) {
-  const [mode, setMode]         = useState(null); // null | "coach" | "member"
-  const [name, setName]         = useState("");
-  const [birthdate, setBirthdate] = useState("");
-  const [pw, setPw]             = useState("");
-  const [error, setError]       = useState("");
+  const [mode, setMode]     = useState(null); // null | "coach" | "member"
+  const [name, setName]     = useState("");
+  const [phone4, setPhone4] = useState("");
+  const [pw, setPw]         = useState("");
+  const [error, setError]   = useState("");
 
-  const reset = () => { setMode(null); setName(""); setBirthdate(""); setPw(""); setError(""); };
+  const reset = () => { setMode(null); setName(""); setPhone4(""); setPw(""); setError(""); };
 
   const handleCoachSubmit = () => {
     if (pw === COACH_PASSWORD) { onCoach(); }
@@ -19,13 +19,12 @@ export function LoginPage({ onCoach, onMember, onSignup, members }) {
   };
 
   const handleMemberSubmit = () => {
-    const found = members.find(m =>
-      m.name === name.trim() &&
-      m.birthdate === birthdate &&
-      m.password === pw
-    );
+    const found = members.find(m => {
+      const last4 = (m.parentPhone ?? "").replace(/\D/g, "").slice(-4);
+      return m.name === name.trim() && last4 === phone4 && m.password === pw;
+    });
     if (found) { onMember(found.id); }
-    else { setError("이름, 생년월일 또는 비밀번호가 올바르지 않습니다."); setPw(""); }
+    else { setError("이름, 연락처 뒷 4자리 또는 비밀번호가 올바르지 않습니다."); setPw(""); }
   };
 
   const isCoachMode  = mode === "coach";
@@ -107,10 +106,14 @@ export function LoginPage({ onCoach, onMember, onSignup, members }) {
                 style={{ ...inputStyle, marginBottom: 10 }}
               />
               <input
-                type="date"
-                value={birthdate}
-                onChange={e => { setBirthdate(e.target.value); setError(""); }}
-                style={{ ...inputStyle, marginBottom: 10, colorScheme: "dark" }}
+                type="tel"
+                inputMode="numeric"
+                maxLength={4}
+                value={phone4}
+                onChange={e => { setPhone4(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
+                onKeyDown={e => e.key === "Enter" && handleSubmit()}
+                placeholder="연락처 뒷 4자리"
+                style={{ ...inputStyle, marginBottom: 10 }}
               />
             </>
           )}
@@ -146,7 +149,6 @@ export function SignupPage({ onSignup, onBack }) {
   const [form, setForm] = useState({
     name: "", password: "", passwordConfirm: "",
     gender: "",
-    birthdate: "",
     parentPhone: "", studentPhone: "",
     schoolLevel: "초등", schoolName: "", grade: "1",
     address: "", shuttle: false, note: "",
@@ -161,7 +163,6 @@ export function SignupPage({ onSignup, onBack }) {
 
   const handleSubmit = () => {
     if (!form.name || !form.parentPhone) return alert(isAdult ? "이름과 본인 연락처를 입력해주세요." : "이름과 부모님 연락처를 입력해주세요.");
-    if (!form.birthdate) return alert("생년월일을 입력해주세요.");
     if (!form.password) return alert("비밀번호를 입력해주세요.");
     if (form.password !== form.passwordConfirm) return alert("비밀번호가 일치하지 않습니다.");
     onSignup(form);
@@ -182,16 +183,6 @@ export function SignupPage({ onSignup, onBack }) {
         <Field label="이름">
           <input value={form.name} onChange={e => set("name", e.target.value)}
             placeholder="홍길동" style={inputStyle} />
-        </Field>
-
-        {/* 생년월일 */}
-        <Field label="생년월일">
-          <input
-            type="date"
-            value={form.birthdate}
-            onChange={e => set("birthdate", e.target.value)}
-            style={{ ...inputStyle, colorScheme: "dark" }}
-          />
         </Field>
 
         {/* 성별 */}
@@ -241,6 +232,23 @@ export function SignupPage({ onSignup, onBack }) {
           </div>
         </Field>
 
+        {/* 학년 — 학생만 표시 */}
+        {!isAdult && (
+          <Field label="학년">
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {GRADE_OPTIONS[form.schoolLevel].map(g => (
+                <button key={g} onClick={() => set("grade", g)} style={{
+                  padding: "7px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                  border: `1.5px solid ${form.grade === g ? COLORS.ORANGE : "#ffffff22"}`,
+                  background: form.grade === g ? `${COLORS.ORANGE}22` : "transparent",
+                  color: form.grade === g ? COLORS.ORANGE : "#8899AA",
+                  fontSize: 13, fontWeight: 600,
+                }}>{g}학년</button>
+              ))}
+            </div>
+          </Field>
+        )}
+
         {/* 연락처 — 성인: 본인만 / 학생: 부모님 + 학생 */}
         {isAdult ? (
           <Field label="본인 연락처">
@@ -260,27 +268,12 @@ export function SignupPage({ onSignup, onBack }) {
           </>
         )}
 
-        {/* 학교 이름 & 학년 — 학생만 표시 */}
+        {/* 학교 이름 — 학생만 표시 */}
         {!isAdult && (
-          <>
-            <Field label="학교 이름 (선택)">
-              <input value={form.schoolName} onChange={e => set("schoolName", e.target.value)}
-                placeholder="예: 강남초등학교" style={inputStyle} />
-            </Field>
-            <Field label="학년">
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {GRADE_OPTIONS[form.schoolLevel].map(g => (
-                  <button key={g} onClick={() => set("grade", g)} style={{
-                    padding: "7px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
-                    border: `1.5px solid ${form.grade === g ? COLORS.ORANGE : "#ffffff22"}`,
-                    background: form.grade === g ? `${COLORS.ORANGE}22` : "transparent",
-                    color: form.grade === g ? COLORS.ORANGE : "#8899AA",
-                    fontSize: 13, fontWeight: 600,
-                  }}>{g}학년</button>
-                ))}
-              </div>
-            </Field>
-          </>
+          <Field label="학교 이름 (선택)">
+            <input value={form.schoolName} onChange={e => set("schoolName", e.target.value)}
+              placeholder="예: 강남초등학교" style={inputStyle} />
+          </Field>
         )}
 
         {/* 특이사항 */}

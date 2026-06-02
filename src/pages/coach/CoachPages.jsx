@@ -2,18 +2,28 @@ import { useState, useRef, useEffect } from "react";
 import { fetchNotices, insertNotice, deleteNotice } from "../../api/db";
 import { StatCard, MemberAvatar, AgentLog } from "../../components/Common";
 import { runChurnAgent }          from "../../agents/churnAgent";
-import { runMakeupAgent }         from "../../agents/makeupAgent";
 import { runFeedbackAgent }       from "../../agents/feedbackAgent";
 import { runParentMessageAgent }  from "../../agents/parentMessageAgent";
 import { runMonthlyReportAgent }  from "../../agents/monthlyReportAgent";
-import { runRecommendAgent }      from "../../agents/recommendAgent";
 import { COLORS, fmtDate }  from "../../constants";
 
 
 // ── 강사: 대시보드 ─────────────────────────────────────────
-export function CoachDashboard({ members, classes = [], pendingMembers = [], onApprove, onReject, onTogglePaid, pendingPayments = [], onConfirmPayment }) {
+export function CoachDashboard({ members, classes = [], pendingMembers = [], onApprove, onReject, onTogglePaid, pendingPayments = [], onConfirmPayment, makeupRequests = [], onAssignMakeup }) {
   const todayName = ["일","월","화","수","목","금","토"][new Date().getDay()];
   const todayClasses = classes.filter(c => (c.days ?? []).includes(todayName));
+  const [assignModal, setAssignModal] = useState(null);
+  const [assignForm, setAssignForm]   = useState({ classId: "", date: "", memo: "" });
+
+  const openAssign = (r) => { setAssignModal(r); setAssignForm({ classId: "", date: "", memo: "" }); };
+  const handleAssign = () => {
+    onAssignMakeup(assignModal.id, {
+      assignedClassId: assignForm.classId ? Number(assignForm.classId) : null,
+      assignedDate: assignForm.date || null,
+      assignedMemo: assignForm.memo,
+    });
+    setAssignModal(null);
+  };
 
   return (
     <div>
@@ -76,6 +86,33 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
         </div>
       )}
 
+      {/* 보강 신청 목록 */}
+      {makeupRequests.length > 0 && (
+        <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #8B5CF633", marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#8B5CF6", marginBottom: 12 }}>
+            🏀 보강 신청 ({makeupRequests.length}건)
+          </div>
+          {makeupRequests.map(r => (
+            <div key={r.id} style={{ padding: "10px 0", borderBottom: "1px solid #ffffff08" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{r.member_name}</div>
+                  <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>{r.class_title}</div>
+                  <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>
+                    {r.preferred_date && `📅 ${r.preferred_date}`}
+                    {r.preferred_time && ` · ${r.preferred_time === "morning" ? "오전" : r.preferred_time === "afternoon" ? "오후" : "저녁"}`}
+                  </div>
+                  {r.note && <div style={{ fontSize: 11, color: "#FCD34D", marginTop: 4 }}>💬 {r.note}</div>}
+                </div>
+                <button onClick={() => openAssign(r)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, background: "#166534", color: "#86EFAC", flexShrink: 0, marginLeft: 8 }}>
+                  배정
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 위험 회원 현황 */}
       <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #ffffff11" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.ORANGE, marginBottom: 12 }}>⚡ 위험 회원 현황</div>
@@ -102,6 +139,44 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
           </div>
         ))}
       </div>
+
+      {/* 보강 배정 모달 */}
+      {assignModal && (
+        <div onClick={() => setAssignModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: COLORS.NAVY, borderRadius: 20, padding: 28, width: "100%", maxWidth: 400, border: "1px solid #ffffff22" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>보강 배정</div>
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 20 }}>
+              {assignModal.member_name} · {assignModal.class_title}
+              {assignModal.preferred_date && <span style={{ marginLeft: 6, color: "#93C5FD" }}>희망 {assignModal.preferred_date}</span>}
+            </div>
+
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>배정 수업</div>
+            <select value={assignForm.classId} onChange={e => setAssignForm(f => ({ ...f, classId: e.target.value }))}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, marginBottom: 14, border: "1px solid #ffffff22", background: COLORS.DARK, color: "#fff", fontSize: 13, boxSizing: "border-box" }}>
+              <option value="">수업 선택</option>
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>{c.title} ({c.days?.join("/")} {c.startTime})</option>
+              ))}
+            </select>
+
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>배정 날짜</div>
+            <input type="date" value={assignForm.date} onChange={e => setAssignForm(f => ({ ...f, date: e.target.value }))}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, marginBottom: 14, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, boxSizing: "border-box", colorScheme: "dark" }} />
+
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>메모</div>
+            <textarea value={assignForm.memo} onChange={e => setAssignForm(f => ({ ...f, memo: e.target.value }))}
+              placeholder="예: 6월 15일 토요일 10시 초등반으로 배정했습니다"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, marginBottom: 20, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 70, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }} />
+
+            <button onClick={handleAssign} style={{ width: "100%", padding: "12px 0", borderRadius: 12, background: COLORS.ORANGE, color: "#fff", border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>
+              배정 완료 및 알림 전송
+            </button>
+            <button onClick={() => setAssignModal(null)} style={{ width: "100%", padding: "10px 0", borderRadius: 12, background: "transparent", color: "#8899AA", border: "1px solid #ffffff22", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -193,7 +268,7 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
             color: selectedClass === c.id ? COLORS.ORANGE : "#8899AA", fontSize: 13,
           }}>
             {c.title}
-            {(c.days ?? []).map(d => <span key={d} style={{ marginLeft: 4, fontSize: 10, color: "#93C5FD" }}>{d}</span>)}
+            {c.startTime && <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.7 }}>{c.startTime}</span>}
           </button>
         ))}
       </div>
@@ -652,15 +727,30 @@ function FormRow({ label, children }) {
 }
 
 // ── 강사: 회원 현황 ────────────────────────────────────────
-export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdateNote }) {
-  const [expandedId, setExpandedId] = useState(null);
-  const [payingId, setPayingId]     = useState(null);
-  const [search, setSearch]         = useState("");
-  const [assignDay, setAssignDay]   = useState(null);
+export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdateNote, onDelete, onUpdateGender }) {
+  const [expandedId, setExpandedId]         = useState(null);
+  const [payingId, setPayingId]             = useState(null);
+  const [search, setSearch]                 = useState("");
+  const [assignDay, setAssignDay]           = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [filterDay, setFilterDay]           = useState(null);
+  const [filterClassId, setFilterClassId]   = useState(null); // null=전체, -1=미배정, classId=해당수업
 
-  const sorted = [...members]
+  const dayClasses = filterDay
+    ? classes.filter(c => (c.days ?? []).includes(filterDay))
+    : classes;
+
+  const dayClassIds = dayClasses.map(c => c.id);
+
+  const filtered = [...members]
     .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-    .filter(m => m.name.includes(search.trim()));
+    .filter(m => m.name.includes(search.trim()))
+    .filter(m => {
+      if (filterClassId === -1) return (m.classes ?? []).length === 0;
+      if (filterClassId !== null) return (m.classes ?? []).includes(filterClassId);
+      if (filterDay) return (m.classes ?? []).some(id => dayClassIds.includes(id));
+      return true;
+    });
 
   return (
     <div>
@@ -675,10 +765,44 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
           fontSize: 14, boxSizing: "border-box", fontFamily: "inherit",
         }}
       />
-      <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 10 }}>{sorted.length}명</div>
+
+      {/* 요일 + 미배정 필터 */}
+      <div style={{ display: "flex", gap: 5, marginBottom: 8, flexWrap: "wrap" }}>
+        {[null, "월","화","수","목","금","토","일"].map(d => (
+          <button key={d ?? "전체"} onClick={() => { setFilterDay(d); setFilterClassId(null); }} style={{
+            padding: "5px 10px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+            border: `1.5px solid ${filterDay === d && filterClassId !== -1 ? COLORS.ORANGE : "#ffffff22"}`,
+            background: filterDay === d && filterClassId !== -1 ? `${COLORS.ORANGE}22` : "transparent",
+            color: filterDay === d && filterClassId !== -1 ? COLORS.ORANGE : "#8899AA",
+            fontSize: 11, fontWeight: filterDay === d && filterClassId !== -1 ? 700 : 400,
+          }}>{d ? `${d}요일` : "전체"}</button>
+        ))}
+        <button onClick={() => setFilterClassId(-1)} style={{
+          padding: "5px 10px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+          border: `1.5px solid ${filterClassId === -1 ? "#EF4444" : "#ffffff22"}`,
+          background: filterClassId === -1 ? "#EF444422" : "transparent",
+          color: filterClassId === -1 ? "#EF4444" : "#8899AA", fontSize: 11, fontWeight: filterClassId === -1 ? 700 : 400,
+        }}>미배정</button>
+      </div>
+
+      {/* 수업 필터 — 요일 선택 시만 표시 */}
+      {filterDay && filterClassId !== -1 && (
+        <div style={{ display: "flex", gap: 5, marginBottom: 12, flexWrap: "wrap" }}>
+          {dayClasses.map(c => (
+            <button key={c.id} onClick={() => setFilterClassId(filterClassId === c.id ? null : c.id)} style={{
+              padding: "5px 10px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+              border: `1.5px solid ${filterClassId === c.id ? COLORS.ORANGE : "#ffffff22"}`,
+              background: filterClassId === c.id ? `${COLORS.ORANGE}22` : "transparent",
+              color: filterClassId === c.id ? COLORS.ORANGE : "#8899AA", fontSize: 11, fontWeight: filterClassId === c.id ? 700 : 400,
+            }}>{c.title} {c.startTime}</button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 10 }}>{filtered.length}명</div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {sorted.map(m => {
+      {filtered.map(m => {
         const myClasses = (classes ?? []).filter(c => (m.classes ?? []).includes(c.id));
         const attendColor = m.attendance >= 80 ? "#22C55E" : m.attendance >= 60 ? "#F59E0B" : "#EF4444";
         const isExpanded = expandedId === m.id;
@@ -686,21 +810,22 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
           <div key={m.id} style={{ background: COLORS.NAVY, borderRadius: 12, border: `1px solid ${isExpanded ? COLORS.ORANGE + "55" : "#ffffff11"}`, overflow: "hidden" }}>
 
             {/* 카드 요약 (항상 표시) */}
-            <div style={{ padding: "10px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }} onClick={() => setExpandedId(isExpanded ? null : m.id)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
-                <MemberAvatar member={m} size={32} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{m.name}</div>
-                  <div style={{ fontSize: 11, color: "#8899AA", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {m.schoolLevel && <span>{m.schoolLevel}{m.grade ? ` ${m.grade}학년` : ""} · </span>}
-                    {myClasses.length > 0 ? myClasses.map(c => c.title).join(" · ") : "수업 없음"}
-                    <span style={{ color: attendColor, marginLeft: 6 }}>{m.attendance}%</span>
-                  </div>
+            <div style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onClick={() => setExpandedId(isExpanded ? null : m.id)}>
+              <MemberAvatar member={m} size={32} />
+              <div style={{ width: 80, flexShrink: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                <div style={{ fontSize: 10, color: "#8899AA", marginTop: 1 }}>
+                  {m.gender && <span>{m.gender} </span>}
+                  {m.schoolLevel && <span>{m.schoolLevel}{m.grade ? ` ${m.grade}학년` : ""}</span>}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: "#8899AA", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {myClasses.length > 0 ? myClasses.map(c => c.title).join(" · ") : "수업 없음"}
+                <span style={{ color: attendColor, marginLeft: 6 }}>{m.attendance}%</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                 {payingId === m.id ? (
-                  <div style={{ display: "flex", gap: 4 }} onClick={e => e.stopPropagation()}>
+                  <>
                     {[1, 2, 3].map(n => (
                       <button key={n} onClick={() => { onTogglePaid(m.id, n); setPayingId(null); }} style={{
                         padding: "4px 8px", borderRadius: 8, border: "none", cursor: "pointer",
@@ -712,9 +837,9 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                       padding: "4px 8px", borderRadius: 8, border: "none", cursor: "pointer",
                       fontFamily: "inherit", fontSize: 11, background: "#ffffff11", color: "#8899AA",
                     }}>✕</button>
-                  </div>
+                  </>
                 ) : (
-                  <button onClick={e => { e.stopPropagation(); m.paid ? onTogglePaid(m.id, 0) : setPayingId(m.id); }} style={{
+                  <button onClick={() => { m.paid ? onTogglePaid(m.id, 0) : setPayingId(m.id); }} style={{
                     padding: "4px 10px", borderRadius: 20, border: "none", cursor: "pointer",
                     fontFamily: "inherit", fontSize: 11, fontWeight: 700,
                     background: m.paid ? "#166534" : "#7F1D1D",
@@ -723,7 +848,7 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                     {m.paid ? "납부" : "미납"}
                   </button>
                 )}
-                <span style={{ fontSize: 11, color: "#8899AA" }}>{isExpanded ? "▲" : "▼"}</span>
+                <span style={{ fontSize: 11, color: "#8899AA", cursor: "pointer" }} onClick={() => setExpandedId(isExpanded ? null : m.id)}>{isExpanded ? "▲" : "▼"}</span>
               </div>
             </div>
 
@@ -789,7 +914,7 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                 </div>
 
                 {/* 메모 */}
-                <div style={{ padding: "14px 16px" }}>
+                <div style={{ padding: "14px 16px", borderBottom: "1px solid #ffffff08" }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#8899AA", marginBottom: 8 }}>강사 메모</div>
                   <textarea
                     value={m.note ?? ""}
@@ -797,6 +922,29 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                     placeholder="부상, 주의사항, 특이사항 등 메모"
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 12, minHeight: 70, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
                   />
+                </div>
+
+                {/* 회원 삭제 */}
+                <div style={{ padding: "12px 16px" }}>
+                  {confirmDeleteId === m.id ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: "#FCA5A5", flex: 1 }}>정말 삭제할까요?</span>
+                      <button onClick={() => { onDelete(m.id); setConfirmDeleteId(null); setExpandedId(null); }} style={{
+                        padding: "5px 14px", borderRadius: 8, border: "none", cursor: "pointer",
+                        fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                        background: "#7F1D1D", color: "#FCA5A5",
+                      }}>삭제</button>
+                      <button onClick={() => setConfirmDeleteId(null)} style={{
+                        padding: "5px 12px", borderRadius: 8, border: "1px solid #ffffff22",
+                        background: "transparent", color: "#8899AA", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                      }}>취소</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteId(m.id)} style={{
+                      padding: "6px 14px", borderRadius: 8, border: "1px solid #EF444433",
+                      background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                    }}>회원 삭제</button>
+                  )}
                 </div>
               </div>
             )}
@@ -809,16 +957,11 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
 }
 
 // ── 강사: AI 에이전트 패널 ─────────────────────────────────
-const RECOMMEND_DAYS = ["월","화","수","목","금","토"];
-
 export function CoachAgentPanel({ members, classes, onMembersUpdate }) {
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentLog, setAgentLog]         = useState([]);
   const [results, setResults]           = useState({});
   const logRef = useRef(null);
-
-  const [recInfo, setRecInfo] = useState({ category: "유소년", ageLabel: "초등학생", days: [], timeSlot: "" });
-  const setRec = (key, val) => setRecInfo(p => ({ ...p, [key]: val }));
 
   const addLog = (msg, type = "info") => {
     const time = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -839,27 +982,14 @@ export function CoachAgentPanel({ members, classes, onMembersUpdate }) {
     return r;
   });
 
-  const handleMakeup = () => run("makeup", async () => {
-    const member = members.find(m => m.id === 2);
-    const cls    = classes.find(c => c.id === 2);
-    const { result: r } = await runMakeupAgent(member, cls, classes, { addLog });
-    return r;
-  });
-
   const handleMonthlyReport = () => run("report", async () => {
     const { result: r } = await runMonthlyReportAgent(members, classes, { addLog });
     return r;
   });
 
-  const handleRecommend = () => run("recommend", async () => {
-    const { result: r } = await runRecommendAgent(recInfo, classes, { addLog });
-    return r;
-  });
-
   const AGENTS = [
-    { key: "churn",  num: "①", title: "이탈 위험 감지 에이전트",  desc: "전체 회원 출석률·납부 패턴을 분석해 이탈 위험 회원을 자동으로 감지합니다.", color: "#EF4444",  action: handleChurn },
-    { key: "makeup", num: "②", title: "보강 자동 매칭 에이전트",  desc: "결석 발생 시 즉시 실행 — 회원 수준과 일정을 고려해 최적 보강 수업을 추천합니다.", color: COLORS.ORANGE, action: handleMakeup },
-    { key: "report", num: "③", title: "월간 리포트 자동 생성",    desc: "이달의 출석·납부·수업 현황을 종합 분석해 운영 리포트를 자동으로 작성합니다.", color: "#8B5CF6", action: handleMonthlyReport },
+    { key: "churn",  num: "①", title: "이탈 위험 감지 에이전트", desc: "전체 회원 출석률·납부 패턴을 분석해 이탈 위험 회원을 자동으로 감지합니다.", color: "#EF4444",  action: handleChurn },
+    { key: "report", num: "②", title: "월간 리포트 자동 생성",   desc: "이달의 출석·납부·수업 현황을 종합 분석해 운영 리포트를 자동으로 작성합니다.", color: "#8B5CF6", action: handleMonthlyReport },
   ];
 
   return (
@@ -891,74 +1021,6 @@ export function CoachAgentPanel({ members, classes, onMembersUpdate }) {
         ))}
       </div>
 
-      {/* ④ 수업 추천 에이전트 — 입력 필드 포함 */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #22C55E33" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", marginBottom: 4 }}>④ 수업 추천 에이전트</div>
-          <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 14, lineHeight: 1.6 }}>신규 회원 정보를 입력하면 가장 적합한 수업을 추천합니다.</div>
-
-          {/* 카테고리 */}
-          <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>구분</div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {[["유소년", "초등학생"], ["유소년", "중학생"], ["유소년", "고등학생"], ["성인", "성인"]].map(([cat, label]) => {
-              const active = recInfo.category === cat && recInfo.ageLabel === label;
-              return (
-                <button key={label} onClick={() => { setRec("category", cat); setRec("ageLabel", label); }} style={{
-                  padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: active ? 700 : 400,
-                  border: `1.5px solid ${active ? "#22C55E" : "#ffffff22"}`,
-                  background: active ? "#22C55E22" : "transparent",
-                  color: active ? "#22C55E" : "#8899AA",
-                }}>{label}</button>
-              );
-            })}
-          </div>
-
-          {/* 선호 요일 */}
-          <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>선호 요일 (복수 선택)</div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-            {RECOMMEND_DAYS.map(d => {
-              const active = recInfo.days.includes(d);
-              return (
-                <button key={d} onClick={() => setRec("days", active ? recInfo.days.filter(x => x !== d) : [...recInfo.days, d])} style={{
-                  padding: "6px 11px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: active ? 700 : 400,
-                  border: `1.5px solid ${active ? "#22C55E" : "#ffffff22"}`,
-                  background: active ? "#22C55E22" : "transparent",
-                  color: active ? "#22C55E" : "#8899AA",
-                }}>{d}</button>
-              );
-            })}
-          </div>
-
-          {/* 선호 시간대 */}
-          <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>선호 시간대</div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-            {[["", "상관없음"], ["morning", "오전"], ["afternoon", "오후"], ["evening", "저녁"]].map(([val, label]) => {
-              const active = recInfo.timeSlot === val;
-              return (
-                <button key={val} onClick={() => setRec("timeSlot", val)} style={{
-                  flex: 1, padding: "6px 0", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: active ? 700 : 400,
-                  border: `1.5px solid ${active ? "#22C55E" : "#ffffff22"}`,
-                  background: active ? "#22C55E22" : "transparent",
-                  color: active ? "#22C55E" : "#8899AA",
-                }}>{label}</button>
-              );
-            })}
-          </div>
-
-          <button onClick={handleRecommend} disabled={agentRunning} style={{
-            width: "100%", padding: "9px 0", borderRadius: 8, border: "none", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-            background: agentRunning ? "#ffffff11" : "#22C55E",
-            color: agentRunning ? "#8899AA" : "#fff",
-            cursor: agentRunning ? "not-allowed" : "pointer",
-          }}>{agentRunning ? "실행 중..." : "수업 추천받기"}</button>
-        </div>
-        {results["recommend"] && (
-          <div style={{ background: COLORS.NAVY, borderRadius: "0 0 12px 12px", padding: 16, borderTop: "none", border: "1px solid #22C55E33", marginTop: -1 }}>
-            <div style={{ fontSize: 11, color: "#22C55E", fontWeight: 700, marginBottom: 8, letterSpacing: 0.5 }}>결과</div>
-            <div style={{ fontSize: 13, color: "#CBD5E1", lineHeight: 1.9, whiteSpace: "pre-wrap" }}>{results["recommend"]}</div>
-          </div>
-        )}
-      </div>
 
       <AgentLog logs={agentLog} logRef={logRef} />
     </div>

@@ -24,20 +24,20 @@ export const useAttendanceStore = create((set, get) => ({
 
   mark: async (classId, mId, date, status) => {
     const prev = get().attendance;
-    set(state => ({
-      attendance: {
-        ...state.attendance,
-        [classId]: {
-          ...(state.attendance[classId] ?? {}),
-          [date]: {
-            ...((state.attendance[classId] ?? {})[date] ?? {}),
-            [mId]: status,
-          },
+    const current = (get().attendance[classId]?.[date]?.[mId]);
+    const next = current === status ? null : status; // 같은 버튼 누르면 취소
+    set(state => {
+      const dateAtt = { ...((state.attendance[classId] ?? {})[date] ?? {}), [mId]: next };
+      if (!next) delete dateAtt[mId];
+      return {
+        attendance: {
+          ...state.attendance,
+          [classId]: { ...(state.attendance[classId] ?? {}), [date]: dateAtt },
         },
-      },
-    }));
+      };
+    });
     try {
-      await saveAttendance(mId, classId, status, date);
+      await saveAttendance(mId, classId, next, date);
     } catch {
       set({ attendance: prev });
       useAppStore.getState().showToast('출석 저장 실패. 다시 시도해주세요.', 'err');

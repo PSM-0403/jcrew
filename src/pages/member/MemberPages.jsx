@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { MemberAvatar }     from "../../components/Common";
-import { callGemini }       from "../../api/gemini";
+import { MemberAvatar }           from "../../components/Common";
+import { callGemini }             from "../../api/gemini";
+import { fetchMemberAbsences, fetchMemberMakeupCount, fetchAssignedMakeups, acknowledgeMakeup, fetchMemberAttendance } from "../../api/db";
 import { COLORS, LEVEL_COLOR } from "../../constants";
 
 // ── 회원: 홈 ──────────────────────────────────────────────
@@ -297,45 +298,94 @@ export function MemberClasses({ member, classes, onEnroll, onCancel }) {
 }
 
 // ── 회원: 내 수업 ──────────────────────────────────────────
-const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 const TIME_SLOTS = [
   { key: "morning",   label: "오전", sub: "~12시" },
   { key: "afternoon", label: "오후", sub: "12~18시" },
   { key: "evening",   label: "저녁", sub: "18시~" },
 ];
 
-export function MemberMyClasses({ member, classes, onCancel, onMakeup }) {
+export function MemberMyClasses({ member, classes, onCancel, onMakeupRequest }) {
   const myClasses = classes.filter(c => member.classes.includes(c.id));
-  const [modal, setModal] = useState(null);
-  // modal: null | { classId, step: "form"|"loading"|"result", prefs, result }
+  const [modal, setModal]           = useState(null);
+  const [form, setForm]             = useState({ preferredDate: "", preferredTime: "", note: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [expandedId, setExpandedId]           = useState(null);
+  const [absences, setAbsences]               = useState({});
+  const [makeupCounts, setMakeupCounts]       = useState({});
+  const [assignedMakeups, setAssignedMakeups] = useState([]);
+  const [attendance, setAttendance]           = useState({}); // { [classId]: [{date, status}] }
 
-  const openModal = (classId) =>
-    setModal({ classId, step: "form", prefs: { days: [], timeSlot: "", date: "" }, result: null });
+  useEffect(() => {
+    async function load() {
+      try {
+        const [abs, mkCounts, assigned, att] = await Promise.all([
+          fetchMemberAbsences(member.id),
+          fetchMemberMakeupCount(member.id),
+          fetchAssignedMakeups(member.id),
+          fetchMemberAttendance(member.id),
+        ]);
+        const grouped = {};
+        for (const a of abs) {
+          if (!grouped[a.class_id]) grouped[a.class_id] = [];
+          grouped[a.class_id].push(a.date);
+        }
+        setAbsences(grouped);
+        setMakeupCounts(mkCounts);
+        setAssignedMakeups(assigned);
+        setAttendance(att);
+      } catch {}
+    }
+    load();
+  }, [member.id]);
 
-  const toggleDay = (day) =>
-    setModal(m => ({
-      ...m,
-      prefs: {
-        ...m.prefs,
-        days: m.prefs.days.includes(day)
-          ? m.prefs.days.filter(d => d !== day)
-          : [...m.prefs.days, day],
-      },
-    }));
-
-  const setTimeSlot = (key) =>
-    setModal(m => ({ ...m, prefs: { ...m.prefs, timeSlot: m.prefs.timeSlot === key ? "" : key } }));
-
-  const handleSubmit = async () => {
-    setModal(m => ({ ...m, step: "loading" }));
-    const result = await onMakeup(member.id, modal.classId, modal.prefs);
-    setModal(m => ({ ...m, step: "result", result }));
+  const handleAcknowledge = async (id) => {
+    setAssignedMakeups(p => p.filter(r => r.id !== id));
+    try { await acknowledgeMakeup(id); } catch {}
   };
 
-  const modalCls = myClasses.find(c => c.id === modal?.classId);
+  const openModal = (cls) => {
+    setModal({ classId: cls.id, classTitle: cls.title });
+    setForm({ preferredDate: "", preferredTime: "", note: "" });
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    await onMakeupRequest({ ...form, classId: modal.classId, classTitle: modal.classTitle });
+    setSubmitting(false);
+    setModal(null);
+  };
 
   return (
     <div>
+      {/* 보강 배정 알림 */}
+      {assignedMakeups.length > 0 && (
+        <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, marginBottom: 16, border: "1px solid #8B5CF633" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#8B5CF6", marginBottom: 12 }}>🏀 보강 배정 알림 ({assignedMakeups.length}건)</div>
+          {assignedMakeups.map(r => (
+            <div key={r.id} style={{ padding: "10px 0", borderBottom: "1px solid #ffffff08" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{r.class_title}</div>
+                  {r.assigned_date && (
+                    <div style={{ fontSize: 12, color: "#93C5FD", marginTop: 3 }}>
+                      📅 {r.assigned_date.replace(/-/g, ".")} 보강 배정
+                    </div>
+                  )}
+                  {r.assigned_memo && (
+                    <div style={{ fontSize: 12, color: "#CBD5E1", marginTop: 3 }}>💬 {r.assigned_memo}</div>
+                  )}
+                </div>
+                <button onClick={() => handleAcknowledge(r.id)} style={{
+                  padding: "5px 12px", borderRadius: 8, border: "none", cursor: "pointer",
+                  fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                  background: "#166534", color: "#86EFAC", flexShrink: 0, marginLeft: 8,
+                }}>확인</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {myClasses.length === 0
         ? (
           <div style={{ textAlign: "center", padding: "60px 0", color: "#8899AA" }}>
@@ -343,162 +393,160 @@ export function MemberMyClasses({ member, classes, onCancel, onMakeup }) {
             <div>신청한 수업이 없습니다</div>
           </div>
         )
-        : myClasses.map(cls => (
-          <div key={cls.id} style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, marginBottom: 10, border: "1px solid #ffffff11" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{cls.title}</div>
-                <div style={{ fontSize: 12, color: "#8899AA" }}>{cls.days?.join("·")}요일 · {cls.startTime}~{cls.endTime} · {cls.location}</div>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => openModal(cls.id)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.ORANGE}44`, background: "transparent", color: COLORS.ORANGE, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                  보강 신청
-                </button>
-                <button onClick={() => onCancel(cls.id)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #EF444444", background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                  취소
-                </button>
-              </div>
-            </div>
-          </div>
-        ))
-      }
-
-      {/* ── 보강 신청 모달 ── */}
-      {modal && (
-        <div onClick={() => modal.step !== "loading" && setModal(null)} style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 200,
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-        }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: COLORS.NAVY, borderRadius: 20, padding: 28,
-            width: "100%", maxWidth: 380, border: "1px solid #ffffff22",
-          }}>
-
-            {/* 폼 */}
-            {modal.step === "form" && (
-              <>
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>보강 수업 신청</div>
-                <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 20 }}>
-                  {modalCls?.title} · 원하는 조건을 선택하세요 (모두 선택사항)
+        : myClasses.map(cls => {
+          const absenceDates = absences[cls.id] ?? [];
+          const used         = makeupCounts[cls.id] ?? 0;
+          const remaining    = Math.max(0, absenceDates.length - used);
+          const isExpanded   = expandedId === cls.id;
+          return (
+            <div key={cls.id} style={{ background: COLORS.NAVY, borderRadius: 12, marginBottom: 10, border: `1px solid ${isExpanded ? COLORS.ORANGE + "44" : "#ffffff11"}`, overflow: "hidden" }}>
+              {/* 헤더 */}
+              <div style={{ padding: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{cls.title}</div>
+                    <div style={{ fontSize: 12, color: "#8899AA" }}>{cls.days?.join("·")}요일 · {cls.startTime}~{cls.endTime} · {cls.location}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 8 }}>
+                    <button onClick={() => openModal(cls)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.ORANGE}44`, background: "transparent", color: COLORS.ORANGE, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                      보강 신청
+                    </button>
+                    <button onClick={() => onCancel(cls.id)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #EF444444", background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                      취소
+                    </button>
+                  </div>
                 </div>
 
-                {/* 요일 */}
-                <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 8 }}>요일</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
-                  {DAYS.map(day => {
-                    const active = modal.prefs.days.includes(day);
-                    return (
-                      <button key={day} onClick={() => toggleDay(day)} style={{
-                        width: 38, height: 38, borderRadius: 10, border: `1.5px solid ${active ? COLORS.ORANGE : "#ffffff22"}`,
-                        background: active ? `${COLORS.ORANGE}22` : "transparent",
-                        color: active ? COLORS.ORANGE : "#8899AA",
-                        fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                      }}>{day}</button>
-                    );
-                  })}
-                </div>
-
-                {/* 시간대 */}
-                <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 8 }}>시간대</div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-                  {TIME_SLOTS.map(ts => {
-                    const active = modal.prefs.timeSlot === ts.key;
-                    return (
-                      <button key={ts.key} onClick={() => setTimeSlot(ts.key)} style={{
-                        flex: 1, padding: "10px 0", borderRadius: 10,
-                        border: `1.5px solid ${active ? COLORS.ORANGE : "#ffffff22"}`,
-                        background: active ? `${COLORS.ORANGE}22` : "transparent",
-                        color: active ? COLORS.ORANGE : "#8899AA",
-                        fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                        textAlign: "center",
-                      }}>
-                        <div>{ts.label}</div>
-                        <div style={{ fontSize: 10, marginTop: 2, opacity: 0.7 }}>{ts.sub}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* 날짜 */}
-                <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 8 }}>날짜 (선택)</div>
-                <input
-                  type="date"
-                  value={modal.prefs.date}
-                  onChange={e => setModal(m => ({ ...m, prefs: { ...m.prefs, date: e.target.value } }))}
-                  style={{
-                    width: "100%", padding: "10px 14px", borderRadius: 10, marginBottom: 20,
-                    border: "1px solid #ffffff22", background: "#ffffff0D",
-                    color: "#fff", fontSize: 14, boxSizing: "border-box",
-                    fontFamily: "'Trebuchet MS', sans-serif",
-                    colorScheme: "dark",
-                  }}
-                />
-
-                <button onClick={handleSubmit} style={{
-                  width: "100%", padding: "13px 0", borderRadius: 12,
-                  background: COLORS.ORANGE, color: "#fff", border: "none",
-                  fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
-                }}>AI 보강 수업 추천받기</button>
-                <button onClick={() => setModal(null)} style={{
-                  width: "100%", padding: "10px 0", borderRadius: 12,
-                  background: "transparent", color: "#8899AA", border: "1px solid #ffffff22",
-                  fontSize: 13, cursor: "pointer", fontFamily: "inherit",
-                }}>취소</button>
-              </>
-            )}
-
-            {/* 로딩 */}
-            {modal.step === "loading" && (
-              <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <div style={{ fontSize: 36, marginBottom: 16 }}>🏀</div>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>AI가 최적 보강 수업을 찾고 있습니다</div>
-                <div style={{ fontSize: 12, color: "#8899AA" }}>잠시만 기다려주세요...</div>
-              </div>
-            )}
-
-            {/* 결과 */}
-            {modal.step === "result" && (
-              <>
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>보강 수업 추천 결과</div>
-                <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 16 }}>{modalCls?.title} 보강</div>
-
-                <div style={{
-                  background: "#ffffff08", borderRadius: 12, padding: 16, marginBottom: 16,
-                  fontSize: 13, lineHeight: 1.8, color: "#CBD5E1", whiteSpace: "pre-wrap",
-                }}>
-                  {modal.result?.result || "추천 결과를 불러올 수 없습니다."}
-                </div>
-
-                {modal.result?.available?.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 8 }}>신청 가능한 수업</div>
-                    {modal.result.available.map(c => (
-                      <div key={c.id} style={{
-                        display: "flex", justifyContent: "space-between", alignItems: "center",
-                        padding: "10px 12px", borderRadius: 10, background: "#ffffff08", marginBottom: 6,
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{c.title}</div>
-                          <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>
-                            {c.days?.join("/")} · {c.startTime}~{c.endTime} · 잔여 {c.capacity - c.enrolled}명
-                          </div>
-                        </div>
-                        <LevelChip level={c.level} />
-                      </div>
-                    ))}
+                {/* 잔여 보강 + 펼치기 */}
+                {absenceDates.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: remaining > 0 ? "#F59E0B22" : "#ffffff11", color: remaining > 0 ? "#F59E0B" : "#8899AA", fontWeight: 700 }}>
+                        잔여 보강 {remaining}회
+                      </span>
+                      <span style={{ fontSize: 11, color: "#8899AA" }}>결석 {absenceDates.length}회</span>
+                    </div>
+                    <button onClick={() => setExpandedId(isExpanded ? null : cls.id)} style={{ fontSize: 11, color: "#8899AA", background: "none", border: "none", cursor: "pointer" }}>
+                      {isExpanded ? "▲ 접기" : "▼ 출결 현황"}
+                    </button>
                   </div>
                 )}
+              </div>
 
-                <button onClick={() => setModal(null)} style={{
-                  width: "100%", padding: "12px 0", borderRadius: 12,
-                  background: COLORS.ORANGE, color: "#fff", border: "none",
-                  fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                }}>확인</button>
-              </>
-            )}
+              {/* 출결 현황 */}
+              {isExpanded && (
+                <div style={{ borderTop: "1px solid #ffffff11", padding: "14px 16px", background: "#ffffff05" }}>
+                  {(() => {
+                    const records = attendance[cls.id] ?? [];
+                    const attended = records.filter(r => r.status === "출석").length;
+                    const absent   = records.filter(r => r.status === "결석").length;
+                    const total    = records.length;
+                    const rate     = total > 0 ? Math.round((attended / total) * 100) : null;
+                    const rateColor = rate === null ? "#8899AA" : rate >= 80 ? "#22C55E" : rate >= 60 ? "#F59E0B" : "#EF4444";
+                    return (
+                      <>
+                        {/* 요약 */}
+                        <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                          <div style={{ fontSize: 12, color: "#86EFAC" }}>출석 {attended}회</div>
+                          <div style={{ fontSize: 12, color: "#FCA5A5" }}>결석 {absent}회</div>
+                          {rate !== null && <div style={{ fontSize: 12, color: rateColor, fontWeight: 700 }}>출석률 {rate}%</div>}
+                        </div>
+                        {/* 월별 그룹 */}
+                        {records.length > 0 ? (() => {
+                          const byMonth = {};
+                          for (const r of records) {
+                            const ym = r.date.slice(0, 7);
+                            if (!byMonth[ym]) byMonth[ym] = [];
+                            byMonth[ym].push(r);
+                          }
+                          return Object.entries(byMonth)
+                            .sort(([a], [b]) => b.localeCompare(a))
+                            .map(([ym, rows]) => {
+                              const [y, m] = ym.split("-");
+                              const att = rows.filter(r => r.status === "출석").length;
+                              const abs = rows.filter(r => r.status === "결석").length;
+                              return (
+                                <div key={ym} style={{ marginBottom: 12 }}>
+                                  <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 6, fontWeight: 600 }}>
+                                    {y}년 {parseInt(m)}월 · 출석 {att}회 결석 {abs}회
+                                  </div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                    {rows.sort((a, b) => a.date.localeCompare(b.date)).map(r => (
+                                      <span key={r.date} style={{
+                                        fontSize: 11, padding: "3px 10px", borderRadius: 20,
+                                        background: r.status === "출석" ? "#22C55E22" : "#EF444422",
+                                        color:      r.status === "출석" ? "#86EFAC"   : "#FCA5A5",
+                                      }}>
+                                        {parseInt(r.date.slice(5, 7))}/{parseInt(r.date.slice(8))} {r.status}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            });
+                        })() : (
+                          <div style={{ fontSize: 12, color: "#ffffff33" }}>출결 기록이 없습니다</div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          );
+        })
+      }
+
+      {/* 보강 신청 모달 */}
+      {modal && (
+        <div onClick={() => !submitting && setModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: COLORS.NAVY, borderRadius: 20, padding: 28, width: "100%", maxWidth: 380, border: "1px solid #ffffff22" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>보강 신청</div>
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 12 }}>{modal.classTitle}</div>
+            <div style={{ fontSize: 12, color: "#FCD34D", background: "#FCD34D11", borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>
+              ⚠ 보강은 결석 발생 월 이내에 사용해야 합니다.
+            </div>
+
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>희망 날짜 (선택)</div>
+            <input type="date" value={form.preferredDate}
+              onChange={e => setForm(f => ({ ...f, preferredDate: e.target.value }))}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, marginBottom: 16, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 14, boxSizing: "border-box", colorScheme: "dark" }} />
+
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>희망 시간대 (선택)</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {TIME_SLOTS.map(ts => {
+                const active = form.preferredTime === ts.key;
+                return (
+                  <button key={ts.key} onClick={() => setForm(f => ({ ...f, preferredTime: active ? "" : ts.key }))} style={{
+                    flex: 1, padding: "10px 0", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "center",
+                    border: `1.5px solid ${active ? COLORS.ORANGE : "#ffffff22"}`,
+                    background: active ? `${COLORS.ORANGE}22` : "transparent",
+                    color: active ? COLORS.ORANGE : "#8899AA", fontSize: 12, fontWeight: 600,
+                  }}>
+                    <div>{ts.label}</div>
+                    <div style={{ fontSize: 10, marginTop: 2, opacity: 0.7 }}>{ts.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>메모 (선택)</div>
+            <textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+              placeholder="강사님께 전달할 내용"
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, marginBottom: 20, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 70, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }} />
+
+            <button onClick={handleSubmit} disabled={submitting} style={{
+              width: "100%", padding: "12px 0", borderRadius: 12, border: "none",
+              background: submitting ? "#ffffff22" : COLORS.ORANGE, color: submitting ? "#8899AA" : "#fff",
+              fontSize: 14, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 8,
+            }}>{submitting ? "신청 중..." : "보강 신청하기"}</button>
+            <button onClick={() => setModal(null)} disabled={submitting} style={{ width: "100%", padding: "10px 0", borderRadius: 12, background: "transparent", color: "#8899AA", border: "1px solid #ffffff22", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              취소
+            </button>
           </div>
         </div>
       )}
+
     </div>
   );
 }
