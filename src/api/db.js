@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 
 // ── Transform helpers ─────────────────────────────────────────
 
-function toMember(row, enrollments = [], payments = []) {
+function toMember(row, enrollments = [], payments = [], attendance = null) {
   return {
     id: row.id,
     name: row.name,
@@ -11,13 +11,14 @@ function toMember(row, enrollments = [], payments = []) {
     joinDate: row.created_at?.split('T')[0] ?? '',
     category: row.category ?? '성인',
     paid: row.paid ?? false,
-    attendance: row.attendance ?? 100,
+    attendance: attendance ?? row.attendance ?? 100,
     note: row.note ?? '',
     status: row.status ?? 'active',
     schoolLevel: row.school_level ?? '',
     schoolName: row.school_name ?? '',
     grade: row.grade ?? '',
     gender: row.gender ?? '',
+    riskAlert: row.risk_alert ?? null,
     classes: enrollments.filter(e => e.member_id === row.id).map(e => e.class_id),
     paymentHistory: payments
       .filter(p => p.member_id === row.id)
@@ -47,15 +48,33 @@ export async function fetchMembers() {
     { data: rows,        error: e1 },
     { data: enrollments, error: e2 },
     { data: payments,    error: e3 },
+    { data: attData,     error: e4 },
   ] = await Promise.all([
     supabase.from('members').select('*').eq('status', 'active').order('id'),
     supabase.from('enrollments').select('member_id, class_id'),
     supabase.from('payments').select('*').order('paid_at'),
+    supabase.from('attendance').select('member_id, status'),
   ]);
   if (e1) throw e1;
   if (e2) throw e2;
   if (e3) throw e3;
-  return (rows ?? []).map(r => toMember(r, enrollments ?? [], payments ?? []));
+  if (e4) throw e4;
+
+  // 실제 출결 데이터로 출석률 계산
+  const attStats = {};
+  for (const row of attData ?? []) {
+    if (!attStats[row.member_id]) attStats[row.member_id] = { total: 0, attended: 0 };
+    attStats[row.member_id].total++;
+    if (row.status === '출석') attStats[row.member_id].attended++;
+  }
+
+  return (rows ?? []).map(r => {
+    const s = attStats[r.id];
+    const attendance = s && s.total > 0
+      ? Math.round((s.attended / s.total) * 100)
+      : (r.attendance ?? 100);
+    return toMember(r, enrollments ?? [], payments ?? [], attendance);
+  });
 }
 
 export async function fetchPendingMembers() {
@@ -243,6 +262,28 @@ export async function deleteNotice(id) {
   if (error) throw error;
 }
 
+// ── Agent Results ─────────────────────────────────────────────
+
+export async function saveAgentResult(agentType, result) {
+  const { error } = await supabase.from('agent_results')
+    .insert({ agent_type: agentType, result });
+  if (error) throw error;
+}
+
+export async function fetchLatestAgentResult(agentType) {
+  const { data, error } = await supabase.from('agent_results')
+    .select('*').eq('agent_type', agentType)
+    .order('created_at', { ascending: false }).limit(1).single();
+  if (error) return null;
+  return data;
+}
+
+export async function updateMemberRiskAlert(memberId, riskAlert) {
+  const { error } = await supabase.from('members')
+    .update({ risk_alert: riskAlert }).eq('id', memberId);
+  if (error) throw error;
+}
+
 // ── Makeup Requests (보강 신청) ───────────────────────────────
 
 export async function fetchMakeupRequests() {
@@ -261,6 +302,47 @@ export async function insertMakeupRequest({ memberId, memberName, classId, class
     note: note || '',
   });
   if (error) throw error;
+}
+
+export async function fetchAllAttendanceStats() {
+  const { data, error } = await supabase
+    .from('attendance')
+    .select('member_id, status, date')
+    .order('date', { ascending: false });
+  if (error) throw error;
+
+  const stats = {};
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  for (const row of data ?? []) {
+    if (!stats[row.member_id]) {
+      stats[row.member_id] = { total: 0, attended: 0, absent: 0, recentAbsent: 0, dates: [] };
+    }
+    const s = stats[row.member_id];
+    s.total++;
+    if (row.status === '출석') s.attended++;
+    if (row.status === '결석') {
+      s.absent++;
+      if (new Date(row.date) >= thirtyDaysAgo) s.recentAbsent++;
+    }
+    s.dates.push({ date: row.date, status: row.status });
+  }
+
+  // 연속 결석 계산
+  for (const mId in stats) {
+    const s = stats[mId];
+    const sorted = [...s.dates].sort((a, b) => b.date.localeCompare(a.date));
+    let consecutive = 0;
+    for (const d of sorted) {
+      if (d.status === '결석') consecutive++;
+      else break;
+    }
+    s.consecutiveAbsent = consecutive;
+    s.rate = s.total > 0 ? Math.round((s.attended / s.total) * 100) : null;
+  }
+
+  return stats;
 }
 
 export async function fetchMemberAttendance(memberId) {
@@ -340,17 +422,45 @@ export async function fetchPendingPayments() {
   }));
 }
 
-export async function insertPendingPayment(memberId, memberName, requestedAt) {
+export async function insertPendingPayment(memberId, memberName, requestedAt, memo = '') {
   const { data, error } = await supabase.from('pending_payments')
-    .insert({ member_id: memberId, member_name: memberName, requested_at: requestedAt })
+    .insert({ member_id: memberId, member_name: memberName, requested_at: requestedAt, memo })
     .select().single();
   if (error) throw error;
-  return { id: data.id, memberId, memberName, requestedAt };
+  return { id: data.id, memberId, memberName, requestedAt, memo };
 }
 
 export async function deletePendingPayment(id) {
   const { error } = await supabase.from('pending_payments').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ── Class Notes ───────────────────────────────────────────────
+
+export async function saveClassNote(classId, date, content) {
+  const { error } = await supabase.from('class_notes').upsert(
+    { class_id: classId, date, content },
+    { onConflict: 'class_id,date' }
+  );
+  if (error) throw error;
+}
+
+export async function fetchClassNote(classId, date) {
+  const { data, error } = await supabase.from('class_notes')
+    .select('content').eq('class_id', classId).eq('date', date).single();
+  if (error) return '';
+  return data?.content ?? '';
+}
+
+export async function fetchRecentClassNotes(classIds, limit = 5) {
+  if (!classIds?.length) return [];
+  const { data, error } = await supabase.from('class_notes')
+    .select('class_id, date, content')
+    .in('class_id', classIds)
+    .order('date', { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return data ?? [];
 }
 
 // ── Attendance ────────────────────────────────────────────────
@@ -401,6 +511,18 @@ export async function fetchCancellations(year, month) {
     result[row.class_id].push(row.date);
   }
   return result;
+}
+
+export async function fetchUpcomingCancellations(classIds) {
+  if (!classIds?.length) return [];
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase.from('class_cancellations')
+    .select('class_id, date')
+    .in('class_id', classIds)
+    .gte('date', today)
+    .order('date');
+  if (error) return [];
+  return data ?? [];
 }
 
 export async function toggleCancellation(classId, date, cancel) {

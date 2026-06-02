@@ -62,14 +62,13 @@ export default function App() {
   }, []);
 
   // ── 핸들러 ────────────────────────────────────────────────
-  const handleBankPaymentRequest = async () => {
+  const handleBankPaymentRequest = async (memo) => {
     const requestedAt = new Date().toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    const tempEntry = { id: Date.now(), memberId: me.id, memberName: me.name, requestedAt };
+    const tempEntry = { id: Date.now(), memberId: me.id, memberName: me.name, requestedAt, memo };
     addPendingPayment(tempEntry);
     showToast("이체 완료 신청이 접수됐습니다. 강사 확인 후 처리됩니다.");
     try {
-      const saved = await insertPendingPayment(me.id, me.name, requestedAt);
-      // 임시 ID를 실제 DB ID로 교체
+      const saved = await insertPendingPayment(me.id, me.name, requestedAt, memo);
       removePendingPayment(tempEntry.id);
       addPendingPayment(saved);
     } catch {

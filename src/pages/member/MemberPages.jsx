@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
+import { useAgentStore } from "../../stores/agentStore";
 import { MemberAvatar }           from "../../components/Common";
-import { callGemini }             from "../../api/gemini";
-import { fetchMemberAbsences, fetchMemberMakeupCount, fetchAssignedMakeups, acknowledgeMakeup, fetchMemberAttendance } from "../../api/db";
+import { callAI }                 from "../../api/gemini";
+import { fetchMemberAbsences, fetchMemberMakeupCount, fetchAssignedMakeups, acknowledgeMakeup, fetchMemberAttendance, fetchRecentClassNotes, fetchUpcomingCancellations, fetchNotices } from "../../api/db";
 import { COLORS, LEVEL_COLOR } from "../../constants";
 
 // ── 회원: 홈 ──────────────────────────────────────────────
@@ -9,9 +10,14 @@ const BANK_INFO = { bank: "우리은행", account: "1002-629-447772", holder: "�
 
 export function MemberHome({ member, classes, onBankPayment, onCardPayment }) {
   const myClasses = classes.filter(c => member.classes.includes(c.id));
-  const [payModal, setPayModal] = useState(null); // null | "select" | "bank" | "card" | "done"
-  const [cardNum, setCardNum]   = useState("");
+  const [payModal, setPayModal]     = useState(null);
+  const [cardNum, setCardNum]       = useState("");
   const [cardPaying, setCardPaying] = useState(false);
+  const [cancellations, setCancellations] = useState([]);
+
+  useEffect(() => {
+    fetchUpcomingCancellations(member.classes ?? []).then(setCancellations);
+  }, [member.id]);
 
   const handleCardSubmit = async () => {
     setCardPaying(true);
@@ -21,13 +27,34 @@ export function MemberHome({ member, classes, onBankPayment, onCardPayment }) {
     setPayModal("done");
   };
 
+  const [bankMemo, setBankMemo] = useState("");
+
   const handleBankSubmit = () => {
-    onBankPayment();
+    if (!bankMemo.trim()) return alert("입금 금액과 내용을 메모에 작성해주세요.");
+    onBankPayment(bankMemo.trim());
+    setBankMemo("");
     setPayModal("done");
   };
 
   return (
     <div>
+      {/* 휴강 알림 */}
+      {cancellations.length > 0 && (
+        <div style={{ background: "#7F1D1D33", borderRadius: 12, padding: 14, marginBottom: 16, border: "1px solid #EF444444" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#FCA5A5", marginBottom: 8 }}>🚫 휴강 안내</div>
+          {cancellations.map(c => {
+            const cls = classes.find(cl => cl.id === c.class_id);
+            const d = new Date(c.date + "T00:00:00");
+            const DAY = ["일","월","화","수","목","금","토"];
+            return (
+              <div key={`${c.class_id}-${c.date}`} style={{ fontSize: 12, color: "#FCA5A5", marginBottom: 4 }}>
+                • {cls?.title} — {d.getMonth()+1}월 {d.getDate()}일({DAY[d.getDay()]}) 휴강
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div style={{ background: COLORS.NAVY, borderRadius: 16, padding: 20, marginBottom: 16, border: `1px solid ${COLORS.ORANGE}33` }}>
         <div style={{ fontSize: 12, color: COLORS.ORANGE, letterSpacing: 1, marginBottom: 4 }}>WELCOME BACK</div>
         <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>{member.name}님 👋</div>
@@ -189,10 +216,17 @@ export function MemberHome({ member, classes, onBankPayment, onCardPayment }) {
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 12, color: "#FCD34D", background: "#FCD34D11", borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>
-                  ⚠ 이체 완료 후 아래 버튼을 눌러주세요. 강사 확인 후 납부 처리됩니다.
+                <div style={{ fontSize: 12, color: "#FCD34D", background: "#FCD34D11", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+                  ⚠ 이체 완료 후 아래 메모 작성 후 신청해주세요.
                 </div>
-                <button onClick={handleBankSubmit} style={{ width: "100%", padding: "12px 0", borderRadius: 12, background: COLORS.ORANGE, color: "#fff", border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>입금 메모 <span style={{ color: "#EF4444" }}>*필수</span></div>
+                <textarea
+                  value={bankMemo}
+                  onChange={e => setBankMemo(e.target.value)}
+                  placeholder="예: 120,000원 입금했습니다"
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, marginBottom: 16, border: `1px solid ${bankMemo.trim() ? COLORS.ORANGE : "#ffffff22"}`, background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 70, boxSizing: "border-box", fontFamily: "inherit", resize: "none" }}
+                />
+                <button onClick={handleBankSubmit} style={{ width: "100%", padding: "12px 0", borderRadius: 12, background: bankMemo.trim() ? COLORS.ORANGE : "#ffffff22", color: bankMemo.trim() ? "#fff" : "#8899AA", border: "none", fontSize: 14, fontWeight: 700, cursor: bankMemo.trim() ? "pointer" : "not-allowed", fontFamily: "inherit", marginBottom: 8 }}>
                   이체 완료 신청
                 </button>
                 <button onClick={() => setPayModal("select")} style={{ width: "100%", padding: "10px 0", borderRadius: 12, background: "transparent", color: "#8899AA", border: "1px solid #ffffff22", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
@@ -553,11 +587,8 @@ export function MemberMyClasses({ member, classes, onCancel, onMakeupRequest }) 
 
 // ── 회원: AI 챗봇 ──────────────────────────────────────────
 export function MemberChatbot({ member, classes }) {
-  const [messages, setMessages] = useState([
-    { role: "agent", text: "안녕하세요! 제이크루 농구교실 AI입니다. 무엇이든 물어보세요 🏀" }
-  ]);
-  const [input, setInput]     = useState("");
-  const [loading, setLoading] = useState(false);
+  const { chatMessages: messages, chatLoading: loading, addChatMessage, setChatLoading } = useAgentStore();
+  const [input, setInput] = useState("");
   const chatRef = useRef(null);
 
   useEffect(() => {
@@ -568,25 +599,74 @@ export function MemberChatbot({ member, classes }) {
     if (!input.trim() || loading) return;
     const userMsg = input.trim();
     setInput("");
-    setMessages(prev => [...prev, { role: "user", text: userMsg }]);
-    setLoading(true);
+    addChatMessage({ role: "user", text: userMsg });
+    setChatLoading(true);
 
     const myClassTitles = (member.classes ?? []).map(id => {
       const c = classes.find(c => c.id === id);
       return c ? `${c.title}(${c.days?.join("·")})` : null;
     }).filter(Boolean).join(", ");
 
+    const [recentNotes, absData, mkCount, notices] = await Promise.all([
+      fetchRecentClassNotes(member.classes ?? [], 10),
+      fetchMemberAbsences(member.id),
+      fetchMemberMakeupCount(member.id),
+      fetchNotices().catch(() => []),
+    ]);
+
+    const notesText = recentNotes.length > 0
+      ? recentNotes.map(n => {
+          const cls = classes.find(c => c.id === n.class_id);
+          return `- ${n.date} ${cls?.title ?? ""}: ${n.content}`;
+        }).join("\n")
+      : "없음";
+
+    // 수업 시간표
+    const myClassSchedule = myClasses.map(c =>
+      `- ${c.title}: ${c.days?.join("·")}요일 ${c.startTime}~${c.endTime} (${c.location})`
+    ).join("\n") || "없음";
+
+    // 결석 횟수 및 잔여 보강
+    const totalAbsences = absData.length;
+    const usedMakeups = Object.values(mkCount).reduce((s, v) => s + v, 0);
+    const remainingMakeups = Math.max(0, totalAbsences - usedMakeups);
+
+    // 최근 공지 3개
+    const noticesText = notices.slice(0, 3).map(n =>
+      `- [${n.created_at?.split("T")[0]}] ${n.title}: ${n.body}`
+    ).join("\n") || "없음";
+
     const systemPrompt = `당신은 제이크루 농구교실 AI 챗봇입니다.
-현재 회원 정보:
+
+[학원 기본 정보]
+- 이름: 제이크루 농구교실
+- 주소: 경기 고양시 일산동구 백석동 1115-4
+- 전화: 010-9946-1392
+- 인스타그램: @jcrew_basket (농구교실), @jcrew_legacy (동호회), @j.crew_youth (유소년)
+- 카카오채널: pf.kakao.com/_xkMxmvxj
+- 블로그: blog.naver.com/jcrew_basket
+- 유튜브: 농구교실, shooter_no.0
+- 수강료: 90분 주1회 100,000원(계좌)/110,000원(카드), 120분 주1회 120,000원(계좌)/132,000원(카드), 형제 등록 시 10% 할인
+
+[회원 정보]
 - 이름: ${member.name}
 - 출석률: ${member.attendance}%, 수강료: ${member.paid ? "납부완료" : "미납"}
-- 수강 중인 수업: ${myClassTitles || "없음"}
-- 신청 가능한 수업: ${classes.filter(c => !(member.classes ?? []).includes(c.id) && c.enrolled < c.capacity).map(c => c.title).join(", ")}
-회원의 질문에 친근하게 2~3문장으로 한국어로 답변하세요.`;
+- 총 결석: ${totalAbsences}회, 잔여 보강: ${remainingMakeups}회
 
-    const reply = await callGemini(userMsg, systemPrompt);
-    setMessages(prev => [...prev, { role: "agent", text: reply }]);
-    setLoading(false);
+[수업 시간표]
+${myClassSchedule}
+
+[최근 수업 내용]
+${notesText}
+
+[최근 공지]
+${noticesText}
+
+회원의 질문에 친근하게 2~3문장으로 한국어로 답변하세요. 수업 내용 관련 질문엔 농구 용어를 쉽게 설명해주세요.`;
+
+    const reply = await callAI(userMsg, systemPrompt);
+    addChatMessage({ role: "agent", text: reply });
+    setChatLoading(false);
   };
 
   return (

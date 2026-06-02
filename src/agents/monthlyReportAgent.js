@@ -1,5 +1,5 @@
 // ── 에이전트 ⑤ 월간 리포트 자동 생성 ─────────────────────
-import { callGemini } from "../api/gemini";
+import { callAI } from "../api/gemini";
 
 export async function runMonthlyReportAgent(members, classes, { addLog }) {
   addLog("🤖 [월간 리포트 에이전트] 시작", "start");
@@ -27,7 +27,7 @@ export async function runMonthlyReportAgent(members, classes, { addLog }) {
 
 위 데이터를 바탕으로 ①이달의 한줄 요약 ②출석 현황 분석 ③수강료 납부 현황 ④다음 달 중점 관리 항목을 포함한 리포트를 작성해주세요.`;
 
-  const result = await callGemini(prompt, "당신은 농구교실 운영을 분석하는 전문 에이전트입니다. 데이터 기반으로 실용적인 리포트를 작성합니다.");
+  const result = await callAI(prompt, "당신은 농구교실 운영을 분석하는 전문 에이전트입니다. 데이터 기반으로 실용적인 리포트를 작성합니다.");
 
   addLog("✅ 월간 리포트 생성 완료", "done");
   return { result };

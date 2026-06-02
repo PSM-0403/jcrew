@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { fetchNotices, insertNotice, deleteNotice } from "../../api/db";
+import { useAgentStore } from "../../stores/agentStore";
+import { fetchNotices, insertNotice, deleteNotice, fetchLatestAgentResult, saveClassNote, fetchClassNote } from "../../api/db";
 import { StatCard, MemberAvatar, AgentLog } from "../../components/Common";
 import { runChurnAgent }          from "../../agents/churnAgent";
 import { runFeedbackAgent }       from "../../agents/feedbackAgent";
@@ -12,8 +13,15 @@ import { COLORS, fmtDate }  from "../../constants";
 export function CoachDashboard({ members, classes = [], pendingMembers = [], onApprove, onReject, onTogglePaid, pendingPayments = [], onConfirmPayment, makeupRequests = [], onAssignMakeup }) {
   const todayName = ["일","월","화","수","목","금","토"][new Date().getDay()];
   const todayClasses = classes.filter(c => (c.days ?? []).includes(todayName));
-  const [assignModal, setAssignModal] = useState(null);
-  const [assignForm, setAssignForm]   = useState({ classId: "", date: "", memo: "" });
+  const [assignModal, setAssignModal]   = useState(null);
+  const [assignForm, setAssignForm]     = useState({ classId: "", date: "", memo: "" });
+  const [lastChurnResult, setLastChurnResult] = useState(null);
+
+  useEffect(() => {
+    fetchLatestAgentResult("churn").then(r => {
+      if (r) setLastChurnResult(r);
+    });
+  }, []);
 
   const openAssign = (r) => { setAssignModal(r); setAssignForm({ classId: "", date: "", memo: "" }); };
   const handleAssign = () => {
@@ -77,6 +85,7 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{p.memberName}</div>
                 <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>이체 완료 신청 · {p.requestedAt}</div>
+                {p.memo && <div style={{ fontSize: 12, color: "#FCD34D", marginTop: 3 }}>💬 {p.memo}</div>}
               </div>
               <button onClick={() => onConfirmPayment(p.id)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "#166534", color: "#86EFAC", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                 납부 확인
@@ -113,31 +122,49 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
         </div>
       )}
 
-      {/* 위험 회원 현황 */}
-      <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #ffffff11" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.ORANGE, marginBottom: 12 }}>⚡ 위험 회원 현황</div>
-        {members.filter(m => m.attendance < 65 || !m.paid).map(m => (
-          <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #ffffff08" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <MemberAvatar member={m} />
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{m.name}</div>
-                <div style={{ fontSize: 11, color: "#8899AA" }}>출석 {m.attendance}%</div>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              {m.attendance < 65 && <Badge label="출석 저조" color="#EF4444" />}
-              {!m.paid && (
-                <button onClick={() => onTogglePaid(m.id)} style={{
-                  padding: "4px 10px", borderRadius: 8, border: "none", cursor: "pointer",
-                  fontFamily: "inherit", fontSize: 11, fontWeight: 700,
-                  background: "#7F1D1D", color: "#FCA5A5",
-                }}>미납 → 납부</button>
-              )}
-              {m.paid && m.attendance < 65 && <Badge label="납부완료" color="#86EFAC" />}
+      {/* 마지막 이탈 감지 분석 결과 */}
+      {lastChurnResult && (
+        <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #EF444433", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#EF4444" }}>🤖 AI 이탈 위험 분석</div>
+            <div style={{ fontSize: 11, color: "#8899AA" }}>
+              {new Date(lastChurnResult.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
             </div>
           </div>
-        ))}
+          <div style={{ fontSize: 13, color: "#CBD5E1", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
+            {lastChurnResult.result}
+          </div>
+        </div>
+      )}
+
+      {/* 위험 회원 현황 */}
+      <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #ffffff11" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.ORANGE, marginBottom: 4 }}>⚡ 위험 회원 현황</div>
+        <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 12 }}>AI 이탈 감지 에이전트 실행 결과 기반</div>
+        {members.filter(m => m.riskAlert).length === 0 ? (
+          <div style={{ fontSize: 13, color: "#8899AA", textAlign: "center", padding: "16px 0" }}>
+            이탈 위험 회원이 없거나 아직 에이전트를 실행하지 않았습니다.
+          </div>
+        ) : (
+          members.filter(m => m.riskAlert).map(m => {
+            const riskColor = m.riskAlert === "매우높음" ? "#EF4444" : m.riskAlert === "높음" ? "#F97316" : "#F59E0B";
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #ffffff08" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <MemberAvatar member={m} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{m.name}</div>
+                    <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>출석 {m.attendance}%</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <Badge label={`위험 ${m.riskAlert}`} color={riskColor} />
+                  <Badge label={m.paid ? "납부" : "미납"} color={m.paid ? "#22C55E" : "#EF4444"} />
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* 보강 배정 모달 */}
@@ -202,10 +229,24 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
   const [selectedDate, setSelectedDate]   = useState(null);
   const [filterDay, setFilterDay]         = useState(null);
   const [memo, setMemo]                   = useState("");
+  const [classNote, setClassNote]         = useState("");
+  const [noteSaving, setNoteSaving]       = useState(false);
   const [agentRunning, setAgentRunning]   = useState(false);
   const [agentLog, setAgentLog]           = useState([]);
   const [parentMsg, setParentMsg]         = useState({});
   const logRef = useRef(null);
+
+  useEffect(() => {
+    if (!selectedClass || !selectedDate) { setClassNote(""); return; }
+    fetchClassNote(selectedClass, selectedDate).then(setClassNote);
+  }, [selectedClass, selectedDate]);
+
+  const handleSaveNote = async () => {
+    if (!classNote.trim()) return;
+    setNoteSaving(true);
+    try { await saveClassNote(selectedClass, selectedDate, classNote.trim()); }
+    finally { setNoteSaving(false); }
+  };
 
   const cls            = classes.find(c => c.id === selectedClass);
   const classDates     = getClassDates(cls?.days, year, month);
@@ -348,6 +389,24 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
                         );
                       })
                   }
+                </div>
+              )}
+
+              {/* 수업 내용 메모 */}
+              {!isCancelled && (
+                <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #3B82F633", marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#3B82F6", marginBottom: 8 }}>📝 수업 내용</div>
+                  <textarea
+                    value={classNote}
+                    onChange={e => setClassNote(e.target.value)}
+                    placeholder="오늘 수업에서 배운 내용을 간략히 적어주세요&#13;&#10;예: 드리블 기초 - 체인지 오브 페이스, 크로스오버 연습"
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 80, boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }}
+                  />
+                  <button onClick={handleSaveNote} disabled={noteSaving || !classNote.trim()} style={{
+                    marginTop: 8, padding: "8px 18px", borderRadius: 10, border: "none", fontSize: 13, fontWeight: 700, cursor: noteSaving || !classNote.trim() ? "not-allowed" : "pointer", fontFamily: "inherit",
+                    background: noteSaving || !classNote.trim() ? "#ffffff11" : "#3B82F6",
+                    color:      noteSaving || !classNote.trim() ? "#8899AA"   : "#fff",
+                  }}>{noteSaving ? "저장 중..." : "저장"}</button>
                 </div>
               )}
 
@@ -958,22 +1017,17 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
 
 // ── 강사: AI 에이전트 패널 ─────────────────────────────────
 export function CoachAgentPanel({ members, classes, onMembersUpdate }) {
-  const [agentRunning, setAgentRunning] = useState(false);
-  const [agentLog, setAgentLog]         = useState([]);
-  const [results, setResults]           = useState({});
+  const { runningKey, logs, results, setRunningKey, addLog, setResult, clearLogs } = useAgentStore();
   const logRef = useRef(null);
-
-  const addLog = (msg, type = "info") => {
-    const time = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    setAgentLog(prev => [...prev.slice(-50), { msg, type, time }]);
-  };
+  const running = runningKey !== null;
 
   const run = async (key, fn) => {
-    setAgentRunning(true);
-    setResults(p => ({ ...p, [key]: "" }));
+    clearLogs();
+    setRunningKey(key);
+    setResult(key, "");
     const r = await fn();
-    setResults(p => ({ ...p, [key]: r }));
-    setAgentRunning(false);
+    setResult(key, r);
+    setRunningKey(null);
   };
 
   const handleChurn = () => run("churn", async () => {
@@ -1003,12 +1057,23 @@ export function CoachAgentPanel({ members, classes, onMembersUpdate }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: a.color, marginBottom: 4 }}>{a.num} {a.title}</div>
                   <div style={{ fontSize: 12, color: "#8899AA", lineHeight: 1.6 }}>{a.desc}</div>
                 </div>
-                <button onClick={a.action} disabled={agentRunning} style={{
-                  padding: "7px 14px", borderRadius: 8, border: "none", fontSize: 12, fontWeight: 700, fontFamily: "inherit",
-                  background: agentRunning ? "#ffffff11" : a.color,
-                  color:      agentRunning ? "#8899AA"   : "#fff",
-                  cursor: agentRunning ? "not-allowed" : "pointer", whiteSpace: "nowrap", marginLeft: 12,
-                }}>{agentRunning ? "실행 중..." : "실행"}</button>
+                <div style={{ display: "flex", gap: 6, marginLeft: 12, flexShrink: 0 }}>
+                  {runningKey === a.key ? (
+                    <>
+                      <span style={{ fontSize: 12, color: "#8899AA", alignSelf: "center", whiteSpace: "nowrap" }}>실행 중...</span>
+                      <button onClick={() => setRunningKey(null)} style={{
+                        padding: "7px 12px", borderRadius: 8, border: "1px solid #ffffff22",
+                        background: "transparent", color: "#FCA5A5", fontSize: 12, fontWeight: 700,
+                        cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                      }}>취소</button>
+                    </>
+                  ) : (
+                    <button onClick={a.action} style={{
+                      padding: "7px 14px", borderRadius: 8, border: "none", fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+                      background: a.color, color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
+                    }}>실행</button>
+                  )}
+                </div>
               </div>
             </div>
             {results[a.key] && (
@@ -1022,7 +1087,7 @@ export function CoachAgentPanel({ members, classes, onMembersUpdate }) {
       </div>
 
 
-      <AgentLog logs={agentLog} logRef={logRef} />
+      <AgentLog logs={logs} logRef={logRef} />
     </div>
   );
 }
