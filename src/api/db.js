@@ -19,6 +19,7 @@ function toMember(row, enrollments = [], payments = [], attendance = null) {
     grade: row.grade ?? '',
     gender: row.gender ?? '',
     riskAlert: row.risk_alert ?? null,
+    aiComment: row.ai_comment ?? '',
     classes: enrollments.filter(e => e.member_id === row.id).map(e => e.class_id),
     paymentHistory: payments
       .filter(p => p.member_id === row.id)
@@ -262,6 +263,61 @@ export async function deleteNotice(id) {
   if (error) throw error;
 }
 
+// ── Messages (채팅) ───────────────────────────────────────────
+
+export async function sendMessage(memberId, content, senderType) {
+  const { error } = await supabase.from('messages')
+    .insert({ member_id: memberId, content, sender_type: senderType });
+  if (error) throw error;
+}
+
+export async function fetchMessages(memberId) {
+  const { data, error } = await supabase.from('messages')
+    .select('*').eq('member_id', memberId).order('created_at');
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function markMessagesRead(memberId, senderType) {
+  const { error } = await supabase.from('messages')
+    .update({ is_read: true })
+    .eq('member_id', memberId)
+    .eq('sender_type', senderType)
+    .eq('is_read', false);
+  if (error) throw error;
+}
+
+export async function fetchAllConversations() {
+  const { data, error } = await supabase.from('messages')
+    .select('member_id, is_read, sender_type, created_at, content')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const map = {};
+  for (const row of data ?? []) {
+    if (!map[row.member_id]) {
+      map[row.member_id] = {
+        memberId: row.member_id,
+        unread: 0,
+        lastAt: row.created_at,
+        lastMessage: row.content,
+        lastSender: row.sender_type,
+      };
+    }
+    if (!row.is_read && row.sender_type === 'member') map[row.member_id].unread++;
+  }
+  return Object.values(map).sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+}
+
+export async function fetchMemberUnreadCount(memberId) {
+  const { count, error } = await supabase.from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('member_id', memberId)
+    .eq('sender_type', 'coach')
+    .eq('is_read', false);
+  if (error) return 0;
+  return count ?? 0;
+}
+
 // ── Agent Results ─────────────────────────────────────────────
 
 export async function saveAgentResult(agentType, result) {
@@ -278,9 +334,9 @@ export async function fetchLatestAgentResult(agentType) {
   return data;
 }
 
-export async function updateMemberRiskAlert(memberId, riskAlert) {
+export async function updateMemberRiskAlert(memberId, riskAlert, aiComment = '') {
   const { error } = await supabase.from('members')
-    .update({ risk_alert: riskAlert }).eq('id', memberId);
+    .update({ risk_alert: riskAlert, ai_comment: aiComment }).eq('id', memberId);
   if (error) throw error;
 }
 
@@ -360,6 +416,15 @@ export async function fetchMemberAttendance(memberId) {
   return grouped;
 }
 
+export async function fetchMemberMakeupRequests(memberId) {
+  const { data, error } = await supabase.from('makeup_requests')
+    .select('*').eq('member_id', memberId)
+    .in('status', ['pending', 'assigned'])
+    .order('created_at', { ascending: false });
+  if (error) return [];
+  return data ?? [];
+}
+
 export async function fetchMemberAbsences(memberId) {
   const { data, error } = await supabase
     .from('attendance')
@@ -436,6 +501,32 @@ export async function deletePendingPayment(id) {
 }
 
 // ── Class Notes ───────────────────────────────────────────────
+
+export async function saveClassFeedback(classId, date, content) {
+  const { error } = await supabase.from('class_feedback').upsert(
+    { class_id: classId, date, content },
+    { onConflict: 'class_id,date' }
+  );
+  if (error) throw error;
+}
+
+export async function fetchClassFeedback(classId, date) {
+  const { data, error } = await supabase.from('class_feedback')
+    .select('content').eq('class_id', classId).eq('date', date).single();
+  if (error) return '';
+  return data?.content ?? '';
+}
+
+export async function fetchRecentClassFeedback(classIds, limit = 5) {
+  if (!classIds?.length) return [];
+  const { data, error } = await supabase.from('class_feedback')
+    .select('class_id, date, content')
+    .in('class_id', classIds)
+    .order('date', { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return data ?? [];
+}
 
 export async function saveClassNote(classId, date, content) {
   const { error } = await supabase.from('class_notes').upsert(

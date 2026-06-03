@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useAgentStore } from "../../stores/agentStore";
-import { fetchNotices, insertNotice, deleteNotice, fetchLatestAgentResult, saveClassNote, fetchClassNote } from "../../api/db";
+import { fetchNotices, insertNotice, deleteNotice, fetchLatestAgentResult, saveClassNote, fetchClassNote, saveClassFeedback, fetchClassFeedback, sendMessage } from "../../api/db";
 import { StatCard, MemberAvatar, AgentLog } from "../../components/Common";
 import { runChurnAgent }          from "../../agents/churnAgent";
 import { runFeedbackAgent }       from "../../agents/feedbackAgent";
@@ -15,12 +15,12 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
   const todayClasses = classes.filter(c => (c.days ?? []).includes(todayName));
   const [assignModal, setAssignModal]   = useState(null);
   const [assignForm, setAssignForm]     = useState({ classId: "", date: "", memo: "" });
-  const [lastChurnResult, setLastChurnResult] = useState(null);
+  const [lastChurnResult, setLastChurnResult]   = useState(null);
+  const [lastReportResult, setLastReportResult] = useState(null);
 
   useEffect(() => {
-    fetchLatestAgentResult("churn").then(r => {
-      if (r) setLastChurnResult(r);
-    });
+    fetchLatestAgentResult("churn").then(r => { if (r) setLastChurnResult(r); });
+    fetchLatestAgentResult("report").then(r => { if (r) setLastReportResult(r); });
   }, []);
 
   const openAssign = (r) => { setAssignModal(r); setAssignForm({ classId: "", date: "", memo: "" }); };
@@ -122,11 +122,28 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
         </div>
       )}
 
+      {/* 월간 리포트 */}
+      {lastReportResult && (
+        <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #8B5CF633", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#8B5CF6" }}>
+              📋 {new Date(lastReportResult.created_at).getMonth() + 1}월 운영 리포트
+            </div>
+            <div style={{ fontSize: 11, color: "#8899AA" }}>
+              {new Date(lastReportResult.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: "#CBD5E1", lineHeight: 1.9, whiteSpace: "pre-wrap" }}>
+            {lastReportResult.result}
+          </div>
+        </div>
+      )}
+
       {/* 마지막 이탈 감지 분석 결과 */}
       {lastChurnResult && (
         <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #EF444433", marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#EF4444" }}>🤖 AI 이탈 위험 분석</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#EF4444" }}>📊 이탈 위험 회원 분석</div>
             <div style={{ fontSize: 11, color: "#8899AA" }}>
               {new Date(lastChurnResult.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
             </div>
@@ -140,7 +157,7 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
       {/* 위험 회원 현황 */}
       <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #ffffff11" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.ORANGE, marginBottom: 4 }}>⚡ 위험 회원 현황</div>
-        <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 12 }}>AI 이탈 감지 에이전트 실행 결과 기반</div>
+        <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 12 }}>출결·납부 데이터 분석 기반 · AI 코멘트 포함</div>
         {members.filter(m => m.riskAlert).length === 0 ? (
           <div style={{ fontSize: 13, color: "#8899AA", textAlign: "center", padding: "16px 0" }}>
             이탈 위험 회원이 없거나 아직 에이전트를 실행하지 않았습니다.
@@ -150,16 +167,19 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
             const riskColor = m.riskAlert === "매우높음" ? "#EF4444" : m.riskAlert === "높음" ? "#F97316" : "#F59E0B";
             return (
               <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #ffffff08" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1 }}>
                   <MemberAvatar member={m} />
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{m.name}</div>
-                    <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>출석 {m.attendance}%</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>{m.name}</span>
+                      <Badge label={`위험 ${m.riskAlert}`} color={riskColor} />
+                      <Badge label={m.paid ? "납부" : "미납"} color={m.paid ? "#22C55E" : "#EF4444"} />
+                    </div>
+                    <div style={{ fontSize: 11, color: "#8899AA" }}>출석 {m.attendance}%</div>
+                    {m.aiComment && (
+                      <div style={{ fontSize: 12, color: "#FCD34D", marginTop: 4 }}>💬 {m.aiComment}</div>
+                    )}
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <Badge label={`위험 ${m.riskAlert}`} color={riskColor} />
-                  <Badge label={m.paid ? "납부" : "미납"} color={m.paid ? "#22C55E" : "#EF4444"} />
                 </div>
               </div>
             );
@@ -231,14 +251,18 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
   const [memo, setMemo]                   = useState("");
   const [classNote, setClassNote]         = useState("");
   const [noteSaving, setNoteSaving]       = useState(false);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [agentRunning, setAgentRunning]   = useState(false);
   const [agentLog, setAgentLog]           = useState([]);
   const [parentMsg, setParentMsg]         = useState({});
+  const [parsedMessages, setParsedMessages] = useState([]);
+  const [sending, setSending]             = useState(false);
   const logRef = useRef(null);
 
   useEffect(() => {
-    if (!selectedClass || !selectedDate) { setClassNote(""); return; }
+    if (!selectedClass || !selectedDate) { setClassNote(""); setMemo(""); return; }
     fetchClassNote(selectedClass, selectedDate).then(setClassNote);
+    fetchClassFeedback(selectedClass, selectedDate).then(setMemo);
   }, [selectedClass, selectedDate]);
 
   const handleSaveNote = async () => {
@@ -274,9 +298,23 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
   const handleParentMessage = async () => {
     if (!selectedClass || !selectedDate) return;
     setAgentRunning(true);
-    const { result } = await runParentMessageAgent(cls, getAttended(), getAbsent(), memo, { addLog });
+    setParsedMessages([]);
+    const { result, parsedMessages: pm } = await runParentMessageAgent(cls, getAttended(), getAbsent(), memo, classNote, { addLog });
     setParentMsg(p => ({ ...p, [selectedClass]: result }));
+    setParsedMessages(pm ?? []);
     setAgentRunning(false);
+  };
+
+  const handleSendAll = async () => {
+    setSending(true);
+    try {
+      await Promise.all(parsedMessages.map(pm => sendMessage(pm.memberId, pm.content, 'coach')));
+      setParsedMessages([]);
+      addLog(`✅ ${parsedMessages.length}명에게 전송 완료`, "done");
+    } catch {
+      addLog("전송 실패", "warn");
+    }
+    setSending(false);
   };
 
   const changeMonth = (dir) => {
@@ -410,24 +448,24 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
                 </div>
               )}
 
-              {/* 피드백 에이전트 */}
+              {/* 피드백 */}
               {!isCancelled && (
                 <>
                   <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: `1px solid ${COLORS.ORANGE}33`, marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.ORANGE, marginBottom: 10 }}>피드백 에이전트</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.ORANGE, marginBottom: 8 }}>✏️ 피드백</div>
+                    <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 10 }}>수업별 회원 피드백을 작성하면 챗봇에서도 확인할 수 있습니다.</div>
                     <textarea value={memo} onChange={e => setMemo(e.target.value)}
-                      placeholder="수업 메모 (예: 김민준 드리블 향상, 이서연 슛 자세 개선 필요)"
-                      style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 80, boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
-                    <button onClick={handleFeedback} disabled={agentRunning} style={{
-                      marginTop: 10, padding: "9px 18px", borderRadius: 10, border: "none", fontSize: 13, fontWeight: 700, cursor: agentRunning ? "not-allowed" : "pointer", fontFamily: "inherit",
-                      background: agentRunning ? "#ffffff11" : COLORS.ORANGE,
-                      color:      agentRunning ? "#8899AA"   : "#fff",
-                    }}>{agentRunning ? "실행 중..." : "피드백 생성"}</button>
-                    {feedback[selectedClass] && (
-                      <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "#ffffff08", fontSize: 13, color: "#CBD5E1", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
-                        {feedback[selectedClass]}
-                      </div>
-                    )}
+                      placeholder="예: 김민준 - 드리블 향상, 크로스오버 잘 됨&#13;&#10;이서연 - 슛 자세 개선 필요, 팔꿈치 각도 신경쓰기"
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 100, boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+                    <button onClick={async () => {
+                      setFeedbackSaving(true);
+                      try { await saveClassFeedback(selectedClass, selectedDate, memo.trim()); }
+                      finally { setFeedbackSaving(false); }
+                    }} disabled={!memo.trim() || feedbackSaving} style={{
+                      marginTop: 8, padding: "8px 18px", borderRadius: 10, border: "none", fontSize: 13, fontWeight: 700, cursor: memo.trim() && !feedbackSaving ? "pointer" : "not-allowed", fontFamily: "inherit",
+                      background: memo.trim() && !feedbackSaving ? COLORS.ORANGE : "#ffffff11",
+                      color:      memo.trim() && !feedbackSaving ? "#fff" : "#8899AA",
+                    }}>{feedbackSaving ? "저장 중..." : "저장"}</button>
                   </div>
 
                   <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #3B82F633", marginBottom: 16 }}>
@@ -439,9 +477,31 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
                       background: agentRunning ? "#ffffff11" : "#3B82F6",
                       color:      agentRunning ? "#8899AA"   : "#fff",
                     }}>{agentRunning ? "실행 중..." : cls?.category === "성인" ? "회원 알림 문자 생성" : "학부모 알림 문자 생성"}</button>
-                    {parentMsg[selectedClass] && (
+                    {/* 생성된 메시지 미리보기 + 전송 */}
+                    {parentMsg[selectedClass] && parsedMessages.length === 0 && (
                       <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "#ffffff08", fontSize: 13, color: "#CBD5E1", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
                         {parentMsg[selectedClass]}
+                      </div>
+                    )}
+                    {parsedMessages.length > 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 8 }}>생성된 메시지 미리보기 ({parsedMessages.length}명)</div>
+                        {parsedMessages.map((pm, i) => (
+                          <div key={i} style={{ padding: "10px 14px", borderRadius: 10, background: "#ffffff08", marginBottom: 8 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.ORANGE, marginBottom: 6 }}>{pm.name}</div>
+                            <textarea
+                              value={pm.content}
+                              onChange={e => setParsedMessages(prev => prev.map((m, j) => j === i ? { ...m, content: e.target.value } : m))}
+                              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#CBD5E1", fontSize: 12, lineHeight: 1.7, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical", minHeight: 70 }}
+                            />
+                          </div>
+                        ))}
+                        <button onClick={handleSendAll} disabled={sending} style={{
+                          width: "100%", padding: "10px 0", borderRadius: 10, border: "none",
+                          fontSize: 13, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", fontFamily: "inherit",
+                          background: sending ? "#ffffff11" : "#3B82F6",
+                          color:      sending ? "#8899AA"   : "#fff",
+                        }}>{sending ? "전송 중..." : `📤 전체 전송 (${parsedMessages.length}명)`}</button>
                       </div>
                     )}
                   </div>
@@ -786,7 +846,7 @@ function FormRow({ label, children }) {
 }
 
 // ── 강사: 회원 현황 ────────────────────────────────────────
-export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdateNote, onDelete, onUpdateGender }) {
+export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdateNote, onDelete, onUpdateGender, onChat }) {
   const [expandedId, setExpandedId]         = useState(null);
   const [payingId, setPayingId]             = useState(null);
   const [search, setSearch]                 = useState("");
@@ -999,10 +1059,16 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                       }}>취소</button>
                     </div>
                   ) : (
-                    <button onClick={() => setConfirmDeleteId(m.id)} style={{
-                      padding: "6px 14px", borderRadius: 8, border: "1px solid #EF444433",
-                      background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-                    }}>회원 삭제</button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => onChat(m.id)} style={{
+                        padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.ORANGE}44`,
+                        background: "transparent", color: COLORS.ORANGE, fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                      }}>💬 채팅</button>
+                      <button onClick={() => setConfirmDeleteId(m.id)} style={{
+                        padding: "6px 14px", borderRadius: 8, border: "1px solid #EF444433",
+                        background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                      }}>회원 삭제</button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1042,7 +1108,7 @@ export function CoachAgentPanel({ members, classes, onMembersUpdate }) {
   });
 
   const AGENTS = [
-    { key: "churn",  num: "①", title: "이탈 위험 감지 에이전트", desc: "전체 회원 출석률·납부 패턴을 분석해 이탈 위험 회원을 자동으로 감지합니다.", color: "#EF4444",  action: handleChurn },
+    { key: "churn",  num: "①", title: "이탈 위험 회원 분석", desc: "전체 회원 출석률·납부·연속결석 데이터를 분석해 이탈 위험 회원을 감지합니다.", color: "#EF4444",  action: handleChurn },
     { key: "report", num: "②", title: "월간 리포트 자동 생성",   desc: "이달의 출석·납부·수업 현황을 종합 분석해 운영 리포트를 자동으로 작성합니다.", color: "#8B5CF6", action: handleMonthlyReport },
   ];
 

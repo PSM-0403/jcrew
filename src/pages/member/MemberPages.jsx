@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useAgentStore } from "../../stores/agentStore";
 import { MemberAvatar }           from "../../components/Common";
 import { callAI }                 from "../../api/openai";
-import { fetchMemberAbsences, fetchMemberMakeupCount, fetchAssignedMakeups, acknowledgeMakeup, fetchMemberAttendance, fetchRecentClassNotes, fetchUpcomingCancellations, fetchNotices } from "../../api/db";
+import { fetchMemberAbsences, fetchMemberMakeupCount, fetchAssignedMakeups, acknowledgeMakeup, fetchMemberAttendance, fetchRecentClassNotes, fetchUpcomingCancellations, fetchNotices, fetchMemberMakeupRequests, fetchRecentClassFeedback } from "../../api/db";
 import { COLORS, LEVEL_COLOR } from "../../constants";
 
 // ── 회원: 홈 ──────────────────────────────────────────────
@@ -588,63 +588,93 @@ export function MemberMyClasses({ member, classes, onCancel, onMakeupRequest }) 
 // ── 회원: AI 챗봇 ──────────────────────────────────────────
 export function MemberChatbot({ member, classes }) {
   const { chatMessages: messages, chatLoading: loading, addChatMessage, setChatLoading } = useAgentStore();
-  const [input, setInput] = useState("");
+  const [input, setInput]           = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const chatRef = useRef(null);
 
+  const myClasses = classes.filter(c => (member.classes ?? []).includes(c.id));
+
+  // 컨텍스트 한 번만 로드
   useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
-  }, [messages]);
+    async function loadContext() {
+      const [recentNotes, absData, mkCount, notices, attData, makeupReqs, feedbacks, cancellations] = await Promise.all([
+        fetchRecentClassNotes(member.classes ?? [], 10).catch(() => []),
+        fetchMemberAbsences(member.id).catch(() => []),
+        fetchMemberMakeupCount(member.id).catch(() => ({})),
+        fetchNotices().catch(() => []),
+        fetchMemberAttendance(member.id).catch(() => ({})),
+        fetchMemberMakeupRequests(member.id).catch(() => []),
+        fetchRecentClassFeedback(member.classes ?? [], 5).catch(() => []),
+        fetchUpcomingCancellations(member.classes ?? []).catch(() => []),
+      ]);
 
-  const send = async () => {
-    if (!input.trim() || loading) return;
-    const userMsg = input.trim();
-    setInput("");
-    addChatMessage({ role: "user", text: userMsg });
-    setChatLoading(true);
+      // 다음 수업 날짜 계산 (휴강 제외)
+      const DAY_KR = ["일","월","화","수","목","금","토"];
+      const cancelledDates = cancellations.map(c => c.date);
+      const nextClassDates = myClasses.map(cls => {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        for (let i = 0; i < 21; i++) {
+          const dayName = DAY_KR[d.getDay()];
+          const dateStr = d.toISOString().split('T')[0];
+          if ((cls.days ?? []).includes(dayName) && !cancelledDates.includes(dateStr)) {
+            return `- ${cls.title}: ${dateStr} (${dayName}) ${cls.startTime} ${cls.location}`;
+          }
+          d.setDate(d.getDate() + 1);
+        }
+        return `- ${cls.title}: 예정 없음`;
+      }).join("\n") || "없음";
 
-    const myClassTitles = (member.classes ?? []).map(id => {
-      const c = classes.find(c => c.id === id);
-      return c ? `${c.title}(${c.days?.join("·")})` : null;
-    }).filter(Boolean).join(", ");
+      const notesText = recentNotes.length > 0
+        ? recentNotes.map(n => {
+            const cls = classes.find(c => c.id === n.class_id);
+            return `- ${n.date} ${cls?.title ?? ""}: ${n.content}`;
+          }).join("\n")
+        : "없음";
 
-    const [recentNotes, absData, mkCount, notices] = await Promise.all([
-      fetchRecentClassNotes(member.classes ?? [], 10),
-      fetchMemberAbsences(member.id),
-      fetchMemberMakeupCount(member.id),
-      fetchNotices().catch(() => []),
-    ]);
+      const myClassSchedule = myClasses.map(c =>
+        `- ${c.title}: ${c.days?.join("·")}요일 ${c.startTime}~${c.endTime} (${c.location})`
+      ).join("\n") || "없음";
 
-    const notesText = recentNotes.length > 0
-      ? recentNotes.map(n => {
-          const cls = classes.find(c => c.id === n.class_id);
-          return `- ${n.date} ${cls?.title ?? ""}: ${n.content}`;
-        }).join("\n")
-      : "없음";
+      const totalAbsences = absData.length;
+      const usedMakeups = Object.values(mkCount).reduce((s, v) => s + v, 0);
+      const remainingMakeups = Math.max(0, totalAbsences - usedMakeups);
 
-    // 수업 시간표
-    const myClassSchedule = myClasses.map(c =>
-      `- ${c.title}: ${c.days?.join("·")}요일 ${c.startTime}~${c.endTime} (${c.location})`
-    ).join("\n") || "없음";
+      const noticesText = notices.slice(0, 3).map(n =>
+        `- [${n.created_at?.split("T")[0]}] ${n.title}: ${n.body}`
+      ).join("\n") || "없음";
 
-    // 결석 횟수 및 잔여 보강
-    const totalAbsences = absData.length;
-    const usedMakeups = Object.values(mkCount).reduce((s, v) => s + v, 0);
-    const remainingMakeups = Math.max(0, totalAbsences - usedMakeups);
+      // 출결 날짜별 기록
+      const attText = Object.entries(attData).map(([classId, records]) => {
+        const cls = classes.find(c => c.id === parseInt(classId));
+        const sorted = [...records].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+        return `- ${cls?.title ?? "수업"}: ${sorted.map(r => `${r.date.slice(5).replace("-","/")} ${r.status}`).join(", ")}`;
+      }).join("\n") || "없음";
 
-    // 최근 공지 3개
-    const noticesText = notices.slice(0, 3).map(n =>
-      `- [${n.created_at?.split("T")[0]}] ${n.title}: ${n.body}`
-    ).join("\n") || "없음";
+      // 강사 피드백 이력
+      const feedbackText = feedbacks.length > 0
+        ? feedbacks.map(f => {
+            const cls = classes.find(c => c.id === f.class_id);
+            return `- ${f.date} ${cls?.title ?? ""}: ${f.content}`;
+          }).join("\n")
+        : "없음";
 
-    const systemPrompt = `당신은 제이크루 농구교실 AI 챗봇입니다.
+      // 보강 신청 현황
+      const makeupText = makeupReqs.length > 0
+        ? makeupReqs.map(r =>
+            `- ${r.class_title} / 희망날짜: ${r.preferred_date || "미정"} / 상태: ${r.status === "pending" ? "대기 중" : "배정완료"}${r.assigned_date ? ` (배정: ${r.assigned_date})` : ""}${r.assigned_memo ? ` / 메모: ${r.assigned_memo}` : ""}`
+          ).join("\n")
+        : "없음";
+
+      setSystemPrompt(`당신은 제이크루 농구교실 AI 챗봇입니다.
 
 [학원 기본 정보]
 - 이름: 제이크루 농구교실
 - 주소: 경기 고양시 일산동구 백석동 1115-4
 - 전화: 010-9946-1392
 - 인스타그램: @jcrew_basket (농구교실), @jcrew_legacy (동호회), @j.crew_youth (유소년)
-- 카카오채널: pf.kakao.com/_xkMxmvxj
-- 블로그: blog.naver.com/jcrew_basket
+- 카카오채널: https://pf.kakao.com/_xkMxmvxj
+- 블로그: https://blog.naver.com/jcrew_basket
 - 유튜브: 농구교실, shooter_no.0
 - 수강료: 90분 주1회 100,000원(계좌)/110,000원(카드), 120분 주1회 120,000원(계좌)/132,000원(카드), 형제 등록 시 10% 할인
 
@@ -656,21 +686,82 @@ export function MemberChatbot({ member, classes }) {
 [수업 시간표]
 ${myClassSchedule}
 
+[다음 수업 예정일 (오늘: ${new Date().toISOString().split('T')[0]}, 휴강 제외)]
+${nextClassDates}
+
 [최근 수업 내용]
 ${notesText}
+
+[납부 이력]
+${(member.paymentHistory ?? []).length > 0
+  ? [...(member.paymentHistory ?? [])].reverse().slice(0, 5).map(h => `- ${h.date} 납부${h.months ? ` (${h.months}개월)` : ""}`).join("\n")
+  : "없음"}
+
+[강사 피드백 이력]
+${feedbackText}
+
+[출결 날짜별 기록]
+${attText}
+
+[보강 신청 현황]
+${makeupText}
 
 [최근 공지]
 ${noticesText}
 
-회원의 질문에 친근하게 2~3문장으로 한국어로 답변하세요. 수업 내용 관련 질문엔 농구 용어를 쉽게 설명해주세요.`;
+회원의 질문에 친근하게 2~3문장으로 한국어로 답변하세요. 수업 내용 관련 질문엔 농구 용어를 쉽게 설명해주세요. 모르는 내용이나 확인이 필요한 질문엔 "카카오톡 채널(https://pf.kakao.com/_xkMxmvxj) 또는 전화(010-9946-1392)로 문의하시면 빠르게 확인해드릴 수 있어요!" 라고 안내해주세요. URL은 반드시 https://로 시작하는 전체 주소로 작성해주세요.`);
+    }
+    loadContext();
+  }, [member.id]);
 
-    const reply = await callAI(userMsg, systemPrompt);
-    addChatMessage({ role: "agent", text: reply });
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [messages]);
+
+  const contextReady = !!systemPrompt;
+
+  const QUICK_QUESTIONS = [
+    "내 출석률 어때?",
+    "다음 수업 언제야?",
+    "보강 몇 번 남았어?",
+    "수강료 얼마야?",
+    "최근에 뭐 배웠어?",
+  ];
+
+  const send = async (msg) => {
+    const userMsg = (msg || input).trim();
+    if (!userMsg || loading || !contextReady) return;
+    setInput("");
+    addChatMessage({ role: "user", text: userMsg });
+    setChatLoading(true);
+    try {
+      const reply = await callAI(userMsg, systemPrompt);
+      addChatMessage({ role: "agent", text: reply });
+    } catch {
+      addChatMessage({ role: "agent", text: "죄송해요, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요 🙏" });
+    }
     setChatLoading(false);
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "60vh" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "65vh" }}>
+
+      {/* 헤더 */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
+          🏀 AI 챗봇
+          {!contextReady && (
+            <span style={{ fontSize: 11, color: "#8899AA" }}>불러오는 중...</span>
+          )}
+        </div>
+        <button onClick={() => useAgentStore.getState().clearChat()} style={{
+          fontSize: 11, color: "#8899AA", background: "none", border: "1px solid #ffffff22",
+          borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit",
+        }}>채팅 초기화</button>
+      </div>
+
+
+      {/* 메시지 목록 */}
       <div ref={chatRef} style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
         {messages.map((msg, i) => (
           <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
@@ -682,7 +773,22 @@ ${noticesText}
               borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
               background: msg.role === "user" ? COLORS.ORANGE : COLORS.NAVY,
               border: msg.role === "user" ? "none" : "1px solid #ffffff11",
-            }}>{msg.text}</div>
+            }}>
+              {(() => {
+                const processed = msg.text
+                  .replace(/(?<!https?:\/\/)pf\.kakao\.com/g, 'https://pf.kakao.com')
+                  .replace(/(?<!https?:\/\/)blog\.naver\.com/g, 'https://blog.naver.com')
+                  .replace(/(?<!https?:\/\/)instagram\.com/g, 'https://instagram.com');
+                return processed.split(/(https?:\/\/\S+)/g).map((part, j) =>
+                  /^https?:\/\//.test(part)
+                    ? <a key={j} href={part.replace(/[).,]+$/, '')} target="_blank" rel="noreferrer"
+                        style={{ color: "#93C5FD", textDecoration: "underline", wordBreak: "break-all" }}>
+                        {part.replace(/[).,]+$/, '')}
+                      </a>
+                    : part
+                );
+              })()}
+            </div>
           </div>
         ))}
         {loading && (
@@ -692,15 +798,31 @@ ${noticesText}
           </div>
         )}
       </div>
+
+      {/* 예시 질문 */}
+      {contextReady && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }} className="no-scrollbar">
+          {QUICK_QUESTIONS.map(q => (
+            <button key={q} onClick={() => send(q)} disabled={loading} style={{
+              padding: "6px 12px", borderRadius: 20, border: `1px solid ${COLORS.ORANGE}44`,
+              background: `${COLORS.ORANGE}11`, color: COLORS.ORANGE, fontSize: 12,
+              cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0,
+            }}>{q}</button>
+          ))}
+        </div>
+      )}
+
+      {/* 입력창 */}
       <div style={{ display: "flex", gap: 8 }}>
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
-          placeholder="궁금한 것을 물어보세요 (예: 내 출석률 어때요?)"
-          style={{ flex: 1, padding: "12px 16px", borderRadius: 12, border: "1px solid #ffffff22", background: COLORS.NAVY, color: "#fff", fontSize: 13, fontFamily: "inherit" }} />
-        <button onClick={send} disabled={loading} style={{
+          placeholder={contextReady ? "궁금한 것을 물어보세요" : "정보 로딩 중..."}
+          disabled={!contextReady}
+          style={{ flex: 1, padding: "12px 16px", borderRadius: 12, border: "1px solid #ffffff22", background: COLORS.NAVY, color: "#fff", fontSize: 13, fontFamily: "inherit", opacity: contextReady ? 1 : 0.5 }} />
+        <button onClick={() => send()} disabled={loading || !contextReady} style={{
           padding: "12px 18px", borderRadius: 12, border: "none", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
-          background: loading ? "#ffffff11" : COLORS.ORANGE,
-          color:      loading ? "#8899AA"   : "#fff",
-          cursor: loading ? "not-allowed" : "pointer",
+          background: loading || !contextReady ? "#ffffff11" : COLORS.ORANGE,
+          color:      loading || !contextReady ? "#8899AA"   : "#fff",
+          cursor: loading || !contextReady ? "not-allowed" : "pointer",
         }}>전송</button>
       </div>
     </div>

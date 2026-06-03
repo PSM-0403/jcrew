@@ -9,8 +9,20 @@ export const useAppStore = create((set) => ({
   loading:         true,
   toast:           null,
   feedback:        {},
-  pendingPayments: [],
-  makeupRequests:  [],
+  pendingPayments:      [],
+  makeupRequests:       [],
+  chatSelectedMemberId: null,
+  chatConversations:    [],
+  chatMessages:         {},   // { [memberId]: [msg, ...] }
+  setChatSelectedMemberId: (id) => set({ chatSelectedMemberId: id }),
+  setChatConversations:    (list) => set({ chatConversations: list }),
+  setChatMessages:         (memberId, msgs) => set(state => ({ chatMessages: { ...state.chatMessages, [memberId]: msgs } })),
+  addChatMessageToStore:   (msg) => set(state => ({
+    chatMessages: {
+      ...state.chatMessages,
+      [msg.member_id]: [...(state.chatMessages[msg.member_id] ?? []), msg],
+    },
+  })),
 
   setRole:       (role)    => set({ role }),
   setShowSignup: (v)       => set({ showSignup: v }),

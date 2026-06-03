@@ -1,11 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useAppStore }         from "./stores/appStore";
 import { useMemberStore }      from "./stores/memberStore";
 import { useClassStore }       from "./stores/classStore";
 import { useAttendanceStore }  from "./stores/attendanceStore";
 
-import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment, insertMakeupRequest, assignMakeupRequest } from "./api/db";
+import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment, insertMakeupRequest, assignMakeupRequest, fetchMemberUnreadCount } from "./api/db";
 
 import { Toast, TabBar }   from "./components/Common";
 import { LoginPage, SignupPage } from "./pages/Login";
@@ -17,6 +17,7 @@ import {
   MemberHome, MemberMyClasses, MemberChatbot,
 } from "./pages/member/MemberPages";
 import { GalleryPage } from "./pages/GalleryPage";
+import { MemberChat, CoachChat } from "./pages/ChatPage";
 
 import { COLORS }         from "./constants";
 import logo               from "./assets/logo.png";
@@ -40,6 +41,14 @@ export default function App() {
 
   const me      = members.find(m => m.id === memberId);
   const isCoach = role === "coach";
+  const [chatMemberId, setChatMemberId]   = useState(null);
+  const [memberUnread, setMemberUnread]   = useState(0);
+
+  // 회원 안읽은 메시지 수
+  useEffect(() => {
+    if (!memberId) return;
+    fetchMemberUnreadCount(memberId).then(setMemberUnread);
+  }, [memberId, tab]);
 
   // ── 초기 로드 ─────────────────────────────────────────────
   useEffect(() => {
@@ -180,15 +189,17 @@ export default function App() {
     { key: "classes",    label: "수업 관리" },
     { key: "members",    label: "회원 현황" },
     { key: "gallery",    label: "갤러리" },
+    { key: "messages",   label: "채팅" },
     { key: "agent",      label: "AI 에이전트" },
     { key: "notice",     label: "공지" },
   ];
   const memberTabs = [
-    { key: "home",   label: "홈" },
-    { key: "my",     label: "내 수업" },
-    { key: "gallery",label: "갤러리" },
-    { key: "chat",   label: "AI 챗봇" },
-    { key: "notice", label: "공지" },
+    { key: "home",     label: "홈" },
+    { key: "my",       label: "내 수업" },
+    { key: "gallery",  label: "갤러리" },
+    { key: "messages", label: memberUnread > 0 ? `채팅 (${memberUnread})` : "채팅" },
+    { key: "chat",     label: "AI 챗봇" },
+    { key: "notice",   label: "공지" },
   ];
 
   return (
@@ -228,16 +239,18 @@ export default function App() {
         {isCoach && tab === "home"       && <CoachDashboard members={members} classes={classes} pendingMembers={pendingMembers} onApprove={approve} onReject={reject} onTogglePaid={togglePaid} pendingPayments={pendingPayments} onConfirmPayment={handleConfirmPayment} makeupRequests={makeupRequests} onAssignMakeup={handleAssignMakeup} />}
         {isCoach && tab === "attendance" && <CoachAttendance members={members} classes={classes} attendance={attendance} cancellations={cancellations} year={year} month={month} onMark={mark} onCancellation={setCancellation} onMonthChange={setMonth} onFeedback={(cId, r) => setFeedback(p => ({ ...p, [cId]: r }))} feedback={feedback} />}
         {isCoach && tab === "classes"    && <CoachClasses classes={classes} onAdd={addClass} onUpdate={updateClass} onDelete={deleteClass} />}
-        {isCoach && tab === "members"    && <CoachMembers members={members} classes={classes} onTogglePaid={togglePaid} onAssign={handleAssignClass} onUpdateNote={updateNote} onDelete={deleteMember} onUpdateGender={updateGender} />}
+        {isCoach && tab === "members"    && <CoachMembers members={members} classes={classes} onTogglePaid={togglePaid} onAssign={handleAssignClass} onUpdateNote={updateNote} onDelete={deleteMember} onUpdateGender={updateGender} onChat={(mId) => { setChatMemberId(mId); setTab("messages"); }} />}
         {isCoach && tab === "gallery"    && <GalleryPage classes={classes} isCoach />}
+        {isCoach && tab === "messages"   && <CoachChat members={members} initMemberId={chatMemberId} onClearInit={() => setChatMemberId(null)} />}
         {isCoach && tab === "agent"      && <CoachAgentPanel members={members} classes={classes} onMembersUpdate={setMembers} />}
         {isCoach && tab === "notice"     && <NoticePage isCoach showToast={showToast} />}
 
         {/* ── 회원 ── */}
         {!isCoach && tab === "home"    && <MemberHome member={me} classes={classes} onBankPayment={handleBankPaymentRequest} onCardPayment={handleCardPayment} />}
         {!isCoach && tab === "my"      && <MemberMyClasses member={me} classes={classes} onCancel={handleCancel} onMakeupRequest={handleMakeupRequest} />}
-        {!isCoach && tab === "gallery" && <GalleryPage classes={classes.filter(c => (me?.classes ?? []).includes(c.id))} isCoach={false} />}
-        {!isCoach && tab === "chat"    && <MemberChatbot member={me} classes={classes} />}
+        {!isCoach && tab === "gallery"  && <GalleryPage classes={classes.filter(c => (me?.classes ?? []).includes(c.id))} isCoach={false} />}
+        {!isCoach && tab === "messages" && <MemberChat member={me} />}
+        {!isCoach && tab === "chat"     && <MemberChatbot member={me} classes={classes} />}
         {!isCoach && tab === "notice"  && <NoticePage isCoach={false} showToast={showToast} />}
       </div>
     </div>
