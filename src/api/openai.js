@@ -1,6 +1,5 @@
-// ── OpenAI API 클라이언트 ──────────────────────────────────
+// ── AI 클라이언트 (OpenAI gpt-4o-mini) ────────────────────
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-const MODEL   = "gpt-4o-mini";
 
 export async function callAI(prompt, systemPrompt = "") {
   const messages = [];
@@ -18,7 +17,7 @@ export async function callAI(prompt, systemPrompt = "") {
         "Authorization": `Bearer ${API_KEY}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: "gpt-4o-mini",
         messages,
         max_tokens: 500,
         temperature: 0.5,
@@ -28,7 +27,7 @@ export async function callAI(prompt, systemPrompt = "") {
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      throw new Error(`OpenAI API error: ${res.status} — ${errBody?.error?.message ?? ""}`);
+      throw new Error(`OpenAI error: ${res.status} — ${errBody?.error?.message ?? ""}`);
     }
 
     const data = await res.json();

@@ -1,5 +1,5 @@
 // ── 에이전트 ③ 피드백 자동 생성 ──────────────────────────
-import { callAI } from "../api/gemini";
+import { callAI } from "../api/openai";
 
 export async function runFeedbackAgent(cls, attendedMembers, memo, { addLog }) {
   addLog(`🤖 [피드백 에이전트] ${cls?.title} 수업`, "start");

@@ -1,5 +1,5 @@
 // ── 에이전트 ④ 학부모/회원 알림 메시지 생성 ──────────────
-import { callAI } from "../api/gemini";
+import { callAI } from "../api/openai";
 
 export async function runParentMessageAgent(cls, attendedMembers, absentMembers, memo, { addLog }) {
   const isAdult   = cls?.category === "성인";

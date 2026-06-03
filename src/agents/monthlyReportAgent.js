@@ -1,5 +1,5 @@
 // ── 에이전트 ⑤ 월간 리포트 자동 생성 ─────────────────────
-import { callAI } from "../api/gemini";
+import { callAI } from "../api/openai";
 
 export async function runMonthlyReportAgent(members, classes, { addLog }) {
   addLog("🤖 [월간 리포트 에이전트] 시작", "start");

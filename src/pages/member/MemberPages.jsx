@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useAgentStore } from "../../stores/agentStore";
 import { MemberAvatar }           from "../../components/Common";
-import { callAI }                 from "../../api/gemini";
+import { callAI }                 from "../../api/openai";
 import { fetchMemberAbsences, fetchMemberMakeupCount, fetchAssignedMakeups, acknowledgeMakeup, fetchMemberAttendance, fetchRecentClassNotes, fetchUpcomingCancellations, fetchNotices } from "../../api/db";
 import { COLORS, LEVEL_COLOR } from "../../constants";
 

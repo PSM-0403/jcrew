@@ -1,5 +1,5 @@
 // ── 에이전트 ① 이탈 위험 감지 ────────────────────────────
-import { callAI } from "../api/gemini";
+import { callAI } from "../api/openai";
 import { fetchAllAttendanceStats, saveAgentResult, updateMemberRiskAlert } from "../api/db";
 
 export async function runChurnAgent(members, { addLog }) {
