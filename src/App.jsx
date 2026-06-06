@@ -14,7 +14,7 @@ import {
   CoachAgentPanel, NoticePage,
 } from "./pages/coach/CoachPages";
 import {
-  MemberHome, MemberMyClasses, MemberChatbot,
+  MemberHome, MemberMyClasses, MemberChatbot, MemberProfile,
 } from "./pages/member/MemberPages";
 import { GalleryPage } from "./pages/GalleryPage";
 import { MemberChat, CoachChat } from "./pages/ChatPage";
@@ -200,6 +200,7 @@ export default function App() {
     { key: "messages", label: memberUnread > 0 ? `채팅 (${memberUnread})` : "채팅" },
     { key: "chat",     label: "AI 챗봇" },
     { key: "notice",   label: "공지" },
+    { key: "profile",  label: "내 정보" },
   ];
 
   return (
@@ -252,6 +253,7 @@ export default function App() {
         {!isCoach && tab === "messages" && <MemberChat member={me} />}
         {!isCoach && tab === "chat"     && <MemberChatbot member={me} classes={classes} />}
         {!isCoach && tab === "notice"  && <NoticePage isCoach={false} showToast={showToast} />}
+        {!isCoach && tab === "profile" && <MemberProfile member={me} onUpdate={() => useMemberStore.getState().load()} showToast={showToast} />}
       </div>
     </div>
   );

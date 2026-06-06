@@ -18,6 +18,9 @@ function toMember(row, enrollments = [], payments = [], attendance = null) {
     schoolName: row.school_name ?? '',
     grade: row.grade ?? '',
     gender: row.gender ?? '',
+    studentPhone: row.student_phone ?? '',
+    shuttle: row.shuttle ?? false,
+    address: row.address ?? '',
     riskAlert: row.risk_alert ?? null,
     aiComment: row.ai_comment ?? '',
     classes: enrollments.filter(e => e.member_id === row.id).map(e => e.class_id),
@@ -94,6 +97,9 @@ export async function insertMember(data) {
     school_level: data.schoolLevel ?? '',
     grade: data.grade ?? '',
     gender: data.gender ?? '',
+    student_phone: data.studentPhone ?? '',
+    shuttle: data.shuttle ?? false,
+    address: data.address ?? '',
     paid: false,
     attendance: 100,
     note: data.note ?? '',
@@ -124,6 +130,22 @@ export async function updateMemberGender(id, gender) {
 
 export async function deleteMember(id) {
   const { error } = await supabase.from('members').update({ status: 'deleted' }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function updateMemberProfile(id, data) {
+  const { error } = await supabase.from('members').update({
+    password:      data.password,
+    phone:         data.parentPhone,
+    gender:        data.gender,
+    school_level:  data.schoolLevel,
+    grade:         data.grade,
+    school_name:   data.schoolName,
+    student_phone: data.studentPhone,
+    shuttle:       data.shuttle,
+    address:       data.address,
+    note:          data.note,
+  }).eq('id', id);
   if (error) throw error;
 }
 
@@ -271,9 +293,10 @@ export async function sendMessage(memberId, content, senderType) {
   if (error) throw error;
 }
 
-export async function fetchMessages(memberId) {
-  const { data, error } = await supabase.from('messages')
-    .select('*').eq('member_id', memberId).order('created_at');
+export async function fetchMessages(memberId, forCoach = false) {
+  let query = supabase.from('messages').select('*').eq('member_id', memberId).order('created_at');
+  if (forCoach) query = query.eq('hidden_by_coach', false);
+  const { data, error } = await query;
   if (error) throw error;
   return data ?? [];
 }
@@ -289,11 +312,12 @@ export async function markMessagesRead(memberId, senderType) {
 
 export async function fetchAllConversations() {
   const { data, error } = await supabase.from('messages')
-    .select('member_id, is_read, sender_type, created_at, content')
+    .select('member_id, is_read, sender_type, created_at, content, hidden_by_coach')
     .order('created_at', { ascending: false });
   if (error) throw error;
   const map = {};
   for (const row of data ?? []) {
+    if (row.hidden_by_coach) continue; // 강사가 숨긴 메시지 제외
     if (!map[row.member_id]) {
       map[row.member_id] = {
         memberId: row.member_id,
@@ -306,6 +330,17 @@ export async function fetchAllConversations() {
     if (!row.is_read && row.sender_type === 'member') map[row.member_id].unread++;
   }
   return Object.values(map).sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+}
+
+export async function deleteMessage(id) {
+  const { error } = await supabase.from('messages').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function hideConversation(memberId) {
+  const { error } = await supabase.from('messages')
+    .update({ hidden_by_coach: true }).eq('member_id', memberId);
+  if (error) throw error;
 }
 
 export async function fetchMemberUnreadCount(memberId) {

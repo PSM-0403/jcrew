@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../api/supabase";
-import { fetchMessages, sendMessage, markMessagesRead, fetchAllConversations } from "../api/db";
+import { fetchMessages, sendMessage, markMessagesRead, fetchAllConversations, deleteMessage, hideConversation } from "../api/db";
 import { MemberAvatar } from "../components/Common";
 import { COLORS } from "../constants";
 import { useAppStore } from "../stores/appStore";
@@ -163,7 +163,7 @@ export function CoachChat({ members, initMemberId, onClearInit }) {
   // 대화 선택 시 메시지 로드
   useEffect(() => {
     if (!selectedId) return;
-    fetchMessages(selectedId).then(msgs => {
+    fetchMessages(selectedId, true).then(msgs => {
       setChatMessages(selectedId, msgs);
       markMessagesRead(selectedId, 'member');
       setChatConversations(useAppStore.getState().chatConversations.map(c =>
@@ -239,20 +239,37 @@ export function CoachChat({ members, initMemberId, onClearInit }) {
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 12 }}>
-              {selectedMember?.name}님과의 대화
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{selectedMember?.name}님과의 대화</div>
+              <button onClick={async () => {
+                if (!window.confirm(`${selectedMember?.name}님과의 채팅방을 나가시겠어요?\n회원은 기존 메시지를 계속 볼 수 있습니다.`)) return;
+                await hideConversation(selectedId);
+                setChatMessages(selectedId, []);
+                setChatConversations(useAppStore.getState().chatConversations.filter(c => c.memberId !== selectedId));
+                setSelectedId(null);
+              }} style={{ fontSize: 11, color: "#FCA5A5", background: "none", border: "1px solid #EF444433", borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+                나가기
+              </button>
             </div>
             <div ref={chatRef} style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
               {messages.map(msg => {
                 const isCoach = msg.sender_type === 'coach';
                 return (
                   <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: isCoach ? "flex-end" : "flex-start" }}>
-                    <div style={{
-                      maxWidth: "200px", padding: "9px 13px", fontSize: 12, lineHeight: 1.7, wordBreak: "break-word",
-                      borderRadius: isCoach ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                      background: isCoach ? COLORS.ORANGE : COLORS.NAVY,
-                      color: "#fff", border: isCoach ? "none" : "1px solid #ffffff11",
-                    }}>{msg.content}</div>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 4 }}>
+                      {isCoach && (
+                        <button onClick={async () => {
+                          await deleteMessage(msg.id);
+                          setChatMessages(selectedId, (chatMessages[selectedId] ?? []).filter(m => m.id !== msg.id));
+                        }} style={{ fontSize: 10, color: "#8899AA", background: "none", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0 }}>✕</button>
+                      )}
+                      <div style={{
+                        maxWidth: "200px", padding: "9px 13px", fontSize: 12, lineHeight: 1.7, wordBreak: "break-word",
+                        borderRadius: isCoach ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                        background: isCoach ? COLORS.ORANGE : COLORS.NAVY,
+                        color: "#fff", border: isCoach ? "none" : "1px solid #ffffff11",
+                      }}>{msg.content}</div>
+                    </div>
                     <div style={{ fontSize: 10, color: "#8899AA", marginTop: 2 }}>
                       {new Date(msg.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </div>

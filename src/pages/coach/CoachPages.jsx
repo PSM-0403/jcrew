@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useAgentStore } from "../../stores/agentStore";
-import { fetchNotices, insertNotice, deleteNotice, fetchLatestAgentResult, saveClassNote, fetchClassNote, saveClassFeedback, fetchClassFeedback, sendMessage } from "../../api/db";
+import { fetchNotices, insertNotice, deleteNotice, fetchLatestAgentResult, saveClassNote, fetchClassNote, saveClassFeedback, fetchClassFeedback, sendMessage, fetchMemberAttendance } from "../../api/db";
 import { StatCard, MemberAvatar, AgentLog } from "../../components/Common";
 import { runChurnAgent }          from "../../agents/churnAgent";
 import { runFeedbackAgent }       from "../../agents/feedbackAgent";
@@ -853,7 +853,8 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
   const [assignDay, setAssignDay]           = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [filterDay, setFilterDay]           = useState(null);
-  const [filterClassId, setFilterClassId]   = useState(null); // null=전체, -1=미배정, classId=해당수업
+  const [filterClassId, setFilterClassId]   = useState(null);
+  const [attCache, setAttCache]             = useState({}); // { [memberId]: attData } // null=전체, -1=미배정, classId=해당수업
 
   const dayClasses = filterDay
     ? classes.filter(c => (c.days ?? []).includes(filterDay))
@@ -929,7 +930,13 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
           <div key={m.id} style={{ background: COLORS.NAVY, borderRadius: 12, border: `1px solid ${isExpanded ? COLORS.ORANGE + "55" : "#ffffff11"}`, overflow: "hidden" }}>
 
             {/* 카드 요약 (항상 표시) */}
-            <div style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onClick={() => setExpandedId(isExpanded ? null : m.id)}>
+            <div style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onClick={() => {
+              const nextId = isExpanded ? null : m.id;
+              setExpandedId(nextId);
+              if (nextId && !attCache[nextId]) {
+                fetchMemberAttendance(nextId).then(data => setAttCache(prev => ({ ...prev, [nextId]: data })));
+              }
+            }}>
               <MemberAvatar member={m} size={32} />
               <div style={{ width: 80, flexShrink: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
@@ -1013,6 +1020,52 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                       })
                     }
                   </div>
+                </div>
+
+                {/* 출결 이력 */}
+                <div style={{ padding: "14px 16px", borderBottom: "1px solid #ffffff08" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#8899AA", marginBottom: 8 }}>출결 이력</div>
+                  {(() => {
+                    const attData = attCache[m.id];
+                    if (!attData) return <div style={{ fontSize: 12, color: "#ffffff33" }}>로딩 중...</div>;
+                    const allRecords = Object.values(attData).flat();
+                    if (allRecords.length === 0) return <div style={{ fontSize: 12, color: "#ffffff33" }}>기록 없음</div>;
+                    // 월별 그룹
+                    const byMonth = {};
+                    for (const cls of Object.entries(attData)) {
+                      const [, records] = cls;
+                      for (const r of records) {
+                        const ym = r.date.slice(0, 7);
+                        if (!byMonth[ym]) byMonth[ym] = [];
+                        byMonth[ym].push(r);
+                      }
+                    }
+                    return Object.entries(byMonth)
+                      .sort(([a], [b]) => b.localeCompare(a))
+                      .map(([ym, rows]) => {
+                        const [y, mo] = ym.split("-");
+                        const att = rows.filter(r => r.status === "출석").length;
+                        const abs = rows.filter(r => r.status === "결석").length;
+                        return (
+                          <div key={ym} style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 4 }}>
+                              {y}년 {parseInt(mo)}월 · 출석 {att}회 결석 {abs}회
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                              {rows.sort((a, b) => a.date.localeCompare(b.date)).map(r => (
+                                <span key={r.date} style={{
+                                  fontSize: 10, padding: "2px 8px", borderRadius: 20,
+                                  background: r.status === "출석" ? "#22C55E22" : "#EF444422",
+                                  color: r.status === "출석" ? "#86EFAC" : "#FCA5A5",
+                                }}>
+                                  {parseInt(r.date.slice(5,7))}/{parseInt(r.date.slice(8))} {r.status}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      });
+                  })()}
                 </div>
 
                 {/* 납부 이력 */}
