@@ -95,6 +95,7 @@ export async function insertMember(data) {
     phone: data.parentPhone || data.studentPhone || '',
     category: data.schoolLevel || data.category || '성인',
     school_level: data.schoolLevel ?? '',
+    school_name: data.schoolName ?? '',
     grade: data.grade ?? '',
     gender: data.gender ?? '',
     student_phone: data.studentPhone ?? '',
