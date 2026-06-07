@@ -948,6 +948,9 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
               <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: "#8899AA", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {myClasses.length > 0 ? myClasses.map(c => c.title).join(" · ") : "수업 없음"}
                 <span style={{ color: attendColor, marginLeft: 6 }}>{m.attendance}%</span>
+                {m.parentPhone && (
+                  <span style={{ marginLeft: 6, color: "#ffffff55" }}>📞 {m.parentPhone}{m.studentPhone ? ` / ${m.studentPhone}` : ""}</span>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                 {payingId === m.id ? (
