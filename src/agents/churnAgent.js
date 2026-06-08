@@ -32,7 +32,12 @@ export async function runChurnAgent(members, { addLog }) {
   // 위험 회원 없음
   if (riskMembers.length === 0) {
     const result = "이탈 위험 회원이 없습니다. 모든 회원이 양호한 상태입니다! 👍";
+    addLog("💾 저장 중...", "info");
     await saveAgentResult("churn", result);
+    // 이전에 위험으로 표시됐던 회원들의 기록도 DB에서 초기화
+    await Promise.all(
+      members.filter(m => m.riskAlert).map(m => updateMemberRiskAlert(m.id, null, ''))
+    );
     const updatedMembers = memberStats.map(({ stats: _s, realRate: _r, riskLevel, ...m }) => ({
       ...m, riskAlert: null, aiComment: '',
     }));

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import {
   fetchMembers, fetchPendingMembers,
   insertMember, approveMember, rejectMember,
-  updateMemberPaid, updateMemberNote, addPayment, deleteMember, updateMemberGender,
+  updateMemberPaid, updateMemberNote, addPayment, deleteMember, updateMemberGender, updateMemberInfo,
 } from '../api/db';
 import { useAppStore } from './appStore';
 
@@ -96,6 +96,19 @@ export const useMemberStore = create((set, get) => ({
     } catch {
       set({ members: prev });
       toast('저장 실패', 'err');
+    }
+  },
+
+  // 정보 수정 (강사용): 낙관적 + 롤백
+  updateMemberInfo: async (mId, data) => {
+    const prev = get().members;
+    set(state => ({ members: state.members.map(m => m.id === mId ? { ...m, ...data } : m) }));
+    try {
+      await updateMemberInfo(mId, data);
+      toast(`${data.name}님 정보가 수정됐습니다.`);
+    } catch {
+      set({ members: prev });
+      toast('정보 수정 실패', 'err');
     }
   },
 

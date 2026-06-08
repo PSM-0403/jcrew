@@ -33,7 +33,7 @@ export default function App() {
   const {
     members, pendingMembers,
     signup, approve, reject, togglePaid, updateNote,
-    updateMemberClasses, updatePaidState, setMembers, deleteMember, updateGender,
+    updateMemberClasses, updatePaidState, setMembers, deleteMember, updateGender, updateMemberInfo,
   } = useMemberStore();
 
   const { classes, addClass, updateClass, deleteClass, updateEnrolled } = useClassStore();
@@ -240,7 +240,7 @@ export default function App() {
         {isCoach && tab === "home"       && <CoachDashboard members={members} classes={classes} pendingMembers={pendingMembers} onApprove={approve} onReject={reject} onTogglePaid={togglePaid} pendingPayments={pendingPayments} onConfirmPayment={handleConfirmPayment} makeupRequests={makeupRequests} onAssignMakeup={handleAssignMakeup} />}
         {isCoach && tab === "attendance" && <CoachAttendance members={members} classes={classes} attendance={attendance} cancellations={cancellations} year={year} month={month} onMark={mark} onCancellation={setCancellation} onMonthChange={setMonth} onFeedback={(cId, r) => setFeedback(p => ({ ...p, [cId]: r }))} feedback={feedback} />}
         {isCoach && tab === "classes"    && <CoachClasses classes={classes} onAdd={addClass} onUpdate={updateClass} onDelete={deleteClass} />}
-        {isCoach && tab === "members"    && <CoachMembers members={members} classes={classes} onTogglePaid={togglePaid} onAssign={handleAssignClass} onUpdateNote={updateNote} onDelete={deleteMember} onUpdateGender={updateGender} onChat={(mId) => { setChatMemberId(mId); setTab("messages"); }} />}
+        {isCoach && tab === "members"    && <CoachMembers members={members} classes={classes} onTogglePaid={togglePaid} onAssign={handleAssignClass} onUpdateNote={updateNote} onDelete={deleteMember} onUpdateGender={updateGender} onUpdateInfo={updateMemberInfo} onChat={(mId) => { setChatMemberId(mId); setTab("messages"); }} />}
         {isCoach && tab === "gallery"    && <GalleryPage classes={classes} isCoach />}
         {isCoach && tab === "messages"   && <CoachChat members={members} initMemberId={chatMemberId} onClearInit={() => setChatMemberId(null)} />}
         {isCoach && tab === "agent"      && <CoachAgentPanel members={members} classes={classes} onMembersUpdate={setMembers} />}

@@ -150,6 +150,21 @@ export async function updateMemberProfile(id, data) {
   if (error) throw error;
 }
 
+export async function updateMemberInfo(id, data) {
+  const { error } = await supabase.from('members').update({
+    name:          data.name,
+    phone:         data.parentPhone,
+    student_phone: data.studentPhone,
+    gender:        data.gender,
+    school_level:  data.schoolLevel,
+    school_name:   data.schoolName,
+    grade:         data.grade,
+    shuttle:       data.shuttle,
+    address:       data.address,
+  }).eq('id', id);
+  if (error) throw error;
+}
+
 export async function updateMemberNote(id, note) {
   const { error } = await supabase.from('members').update({ note }).eq('id', id);
   if (error) throw error;

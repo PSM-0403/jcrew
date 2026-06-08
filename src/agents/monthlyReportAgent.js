@@ -20,7 +20,7 @@ export async function runMonthlyReportAgent(members, classes, { addLog }) {
   // 실제 출석률 계산
   const attRates = members.map(m => {
     const s = attStats[m.id];
-    return s && s.total >= 3 ? s.rate : null;
+    return s && s.total >= 1 ? s.rate : null;
   }).filter(n => n !== null);
   const avgAtt = attRates.length > 0 ? Math.round(attRates.reduce((a, b) => a + b, 0) / attRates.length) : 0;
 

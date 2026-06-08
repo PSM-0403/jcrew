@@ -845,13 +845,18 @@ function FormRow({ label, children }) {
   );
 }
 
+const editIStyle = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 12, boxSizing: "border-box", fontFamily: "inherit" };
+const EDIT_GRADE_OPTIONS = { 초등: ["1","2","3","4","5","6"], 중등: ["1","2","3"], 고등: ["1","2","3"] };
+
 // ── 강사: 회원 현황 ────────────────────────────────────────
-export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdateNote, onDelete, onUpdateGender, onChat }) {
+export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdateNote, onDelete, onUpdateGender, onUpdateInfo, onChat }) {
   const [expandedId, setExpandedId]         = useState(null);
   const [payingId, setPayingId]             = useState(null);
   const [search, setSearch]                 = useState("");
   const [assignDay, setAssignDay]           = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [editingId, setEditingId]           = useState(null);
+  const [editForm, setEditForm]             = useState(null);
   const [filterDay, setFilterDay]           = useState(null);
   const [filterClassId, setFilterClassId]   = useState(null);
   const [attCache, setAttCache]             = useState({}); // { [memberId]: attData } // null=전체, -1=미배정, classId=해당수업
@@ -1097,6 +1102,84 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                     placeholder="부상, 주의사항, 특이사항 등 메모"
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 12, minHeight: 70, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
                   />
+                </div>
+
+                {/* 정보 수정 */}
+                <div style={{ padding: "14px 16px", borderBottom: "1px solid #ffffff08" }}>
+                  {editingId === m.id ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#8899AA", marginBottom: 2 }}>정보 수정</div>
+                      <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} placeholder="이름" style={editIStyle} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input value={editForm.parentPhone} onChange={e => setEditForm(p => ({ ...p, parentPhone: e.target.value }))} placeholder="부모님 연락처" style={editIStyle} />
+                        <input value={editForm.studentPhone} onChange={e => setEditForm(p => ({ ...p, studentPhone: e.target.value }))} placeholder="학생 연락처" style={editIStyle} />
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {["남", "여"].map(g => (
+                          <button key={g} onClick={() => setEditForm(p => ({ ...p, gender: g }))} style={{
+                            flex: 1, padding: "7px 0", borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+                            border: `1.5px solid ${editForm.gender === g ? COLORS.ORANGE : "#ffffff22"}`,
+                            background: editForm.gender === g ? `${COLORS.ORANGE}22` : "transparent",
+                            color: editForm.gender === g ? COLORS.ORANGE : "#8899AA", fontSize: 12, fontWeight: 600,
+                          }}>{g}</button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {["초등", "중등", "고등", "성인"].map(l => (
+                          <button key={l} onClick={() => setEditForm(p => ({ ...p, schoolLevel: l, grade: l === "성인" ? "" : (EDIT_GRADE_OPTIONS[l]?.includes(p.grade) ? p.grade : "1") }))} style={{
+                            flex: 1, padding: "7px 0", borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+                            border: `1.5px solid ${editForm.schoolLevel === l ? COLORS.ORANGE : "#ffffff22"}`,
+                            background: editForm.schoolLevel === l ? `${COLORS.ORANGE}22` : "transparent",
+                            color: editForm.schoolLevel === l ? COLORS.ORANGE : "#8899AA", fontSize: 11, fontWeight: 600,
+                          }}>{l}</button>
+                        ))}
+                      </div>
+                      {editForm.schoolLevel !== "성인" && (
+                        <>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {(EDIT_GRADE_OPTIONS[editForm.schoolLevel] ?? []).map(g => (
+                              <button key={g} onClick={() => setEditForm(p => ({ ...p, grade: g }))} style={{
+                                padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+                                border: `1.5px solid ${editForm.grade === g ? COLORS.ORANGE : "#ffffff22"}`,
+                                background: editForm.grade === g ? `${COLORS.ORANGE}22` : "transparent",
+                                color: editForm.grade === g ? COLORS.ORANGE : "#8899AA", fontSize: 12, fontWeight: 600,
+                              }}>{g}학년</button>
+                            ))}
+                          </div>
+                          <input value={editForm.schoolName} onChange={e => setEditForm(p => ({ ...p, schoolName: e.target.value }))} placeholder="학교 이름" style={editIStyle} />
+                        </>
+                      )}
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#8899AA", cursor: "pointer" }}>
+                        <input type="checkbox" checked={editForm.shuttle} onChange={e => setEditForm(p => ({ ...p, shuttle: e.target.checked }))} />
+                        셔틀 이용
+                      </label>
+                      {editForm.shuttle && (
+                        <input value={editForm.address} onChange={e => setEditForm(p => ({ ...p, address: e.target.value }))} placeholder="주소" style={editIStyle} />
+                      )}
+                      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                        <button onClick={() => { onUpdateInfo(m.id, editForm); setEditingId(null); }} style={{
+                          padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer",
+                          fontFamily: "inherit", fontSize: 12, fontWeight: 700, background: COLORS.ORANGE, color: "#fff",
+                        }}>저장</button>
+                        <button onClick={() => setEditingId(null)} style={{
+                          padding: "6px 14px", borderRadius: 8, border: "1px solid #ffffff22",
+                          background: "transparent", color: "#8899AA", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                        }}>취소</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => {
+                      setEditingId(m.id);
+                      setEditForm({
+                        name: m.name, parentPhone: m.parentPhone ?? "", studentPhone: m.studentPhone ?? "",
+                        gender: m.gender ?? "", schoolLevel: m.schoolLevel ?? "초등", schoolName: m.schoolName ?? "",
+                        grade: m.grade ?? "", shuttle: m.shuttle ?? false, address: m.address ?? "",
+                      });
+                    }} style={{
+                      padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.ORANGE}44`,
+                      background: "transparent", color: COLORS.ORANGE, fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                    }}>✏️ 정보 수정</button>
+                  )}
                 </div>
 
                 {/* 회원 삭제 */}
