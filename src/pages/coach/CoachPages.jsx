@@ -1113,8 +1113,10 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                       <div style={{ fontSize: 12, fontWeight: 700, color: "#8899AA", marginBottom: 2 }}>정보 수정</div>
                       <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} placeholder="이름" style={editIStyle} />
                       <div style={{ display: "flex", gap: 8 }}>
-                        <input value={editForm.parentPhone} onChange={e => setEditForm(p => ({ ...p, parentPhone: e.target.value }))} placeholder="부모님 연락처" style={editIStyle} />
-                        <input value={editForm.studentPhone} onChange={e => setEditForm(p => ({ ...p, studentPhone: e.target.value }))} placeholder="학생 연락처" style={editIStyle} />
+                        <input value={editForm.parentPhone} onChange={e => setEditForm(p => ({ ...p, parentPhone: e.target.value }))} placeholder={editForm.schoolLevel === "성인" ? "본인 연락처" : "부모님 연락처"} style={editIStyle} />
+                        {editForm.schoolLevel !== "성인" && (
+                          <input value={editForm.studentPhone} onChange={e => setEditForm(p => ({ ...p, studentPhone: e.target.value }))} placeholder="학생 연락처" style={editIStyle} />
+                        )}
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         {["남", "여"].map(g => (

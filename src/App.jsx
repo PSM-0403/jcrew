@@ -6,6 +6,7 @@ import { useClassStore }       from "./stores/classStore";
 import { useAttendanceStore }  from "./stores/attendanceStore";
 
 import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment, insertMakeupRequest, assignMakeupRequest, fetchMemberUnreadCount } from "./api/db";
+import { supabase } from "./api/supabase";
 
 import { Toast, TabBar }   from "./components/Common";
 import { LoginPage, SignupPage } from "./pages/Login";
@@ -44,11 +45,30 @@ export default function App() {
   const [chatMemberId, setChatMemberId]   = useState(null);
   const [memberUnread, setMemberUnread]   = useState(0);
 
-  // 회원 안읽은 메시지 수
+  // 회원 안읽은 메시지 수 (탭 변경 + 실시간)
   useEffect(() => {
     if (!memberId) return;
     fetchMemberUnreadCount(memberId).then(setMemberUnread);
-  }, [memberId, tab]);
+
+    const channel = supabase
+      .channel(`member-unread-${memberId}-${Date.now()}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'messages',
+        filter: `member_id=eq.${memberId}`,
+      }, payload => {
+        if (payload.new.sender_type === 'coach') {
+          setMemberUnread(n => n + 1);
+        }
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [memberId]);
+
+  // 채팅 탭 진입 시 미읽음 초기화
+  useEffect(() => {
+    if (!isCoach && tab === "messages") setMemberUnread(0);
+  }, [tab]);
 
   // ── 초기 로드 ─────────────────────────────────────────────
   useEffect(() => {
