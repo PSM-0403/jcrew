@@ -954,7 +954,9 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                 {myClasses.length > 0 ? myClasses.map(c => c.title).join(" · ") : "수업 없음"}
                 <span style={{ color: attendColor, marginLeft: 6 }}>{m.attendance}%</span>
                 {m.parentPhone && (
-                  <span style={{ marginLeft: 6, color: "#ffffff55" }}>📞 {m.parentPhone}{m.studentPhone ? ` / ${m.studentPhone}` : ""}</span>
+                  <span style={{ marginLeft: 6, color: "#ffffff55" }}>
+                    📞 {m.schoolLevel === "성인" ? "연락처" : "부모"}: {m.parentPhone}{m.studentPhone ? ` / 본인: ${m.studentPhone}` : ""}
+                  </span>
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
