@@ -956,9 +956,15 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                   <span style={{ color: attendColor, marginLeft: 6 }}>{m.attendance}%</span>
                 </div>
                 {m.parentPhone && (
-                  <div style={{ fontSize: 10, color: "#ffffff55" }} onClick={e => e.stopPropagation()}>
-                    📞 {m.schoolLevel === "성인" ? "연락처" : "부모"}: <span onClick={e => { e.stopPropagation(); if (window.confirm(`${m.parentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.parentPhone}`; }} style={{ cursor: "pointer" }}>{m.parentPhone}</span>
-                    {m.studentPhone && <> · 본인: <span onClick={e => { e.stopPropagation(); if (window.confirm(`${m.studentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.studentPhone}`; }} style={{ cursor: "pointer" }}>{m.studentPhone}</span></>}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
+                    <div style={{ fontSize: 10, color: "#ffffff55", background: "#ffffff0D", borderRadius: 6, padding: "2px 8px" }}>
+                      📞 {m.schoolLevel === "성인" ? "연락처" : "부모"}: <span onClick={e => { e.stopPropagation(); if (window.confirm(`${m.parentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.parentPhone}`; }} style={{ cursor: "pointer" }}>{m.parentPhone}</span>
+                    </div>
+                    {m.studentPhone && (
+                      <div style={{ fontSize: 10, color: "#ffffff55", background: "#ffffff0D", borderRadius: 6, padding: "2px 8px" }}>
+                        📞 본인: <span onClick={e => { e.stopPropagation(); if (window.confirm(`${m.studentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.studentPhone}`; }} style={{ cursor: "pointer" }}>{m.studentPhone}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -997,14 +1003,14 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
 
                 {/* 연락처 */}
                 {m.parentPhone && (
-                  <div style={{ padding: "10px 14px", borderBottom: "1px solid #ffffff08", display: "flex", gap: 16, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, color: "#8899AA" }}>
+                  <div style={{ padding: "10px 14px", borderBottom: "1px solid #ffffff08", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 12, color: "#8899AA", background: "#ffffff0D", borderRadius: 8, padding: "5px 12px" }}>
                       📞 {m.schoolLevel === "성인" ? "연락처" : "부모"}: <span onClick={() => { if (window.confirm(`${m.parentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.parentPhone}`; }} style={{ color: "#fff", cursor: "pointer" }}>{m.parentPhone}</span>
-                    </span>
+                    </div>
                     {m.studentPhone && (
-                      <span style={{ fontSize: 12, color: "#8899AA" }}>
-                        본인: <span onClick={() => { if (window.confirm(`${m.studentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.studentPhone}`; }} style={{ color: "#fff", cursor: "pointer" }}>{m.studentPhone}</span>
-                      </span>
+                      <div style={{ fontSize: 12, color: "#8899AA", background: "#ffffff0D", borderRadius: 8, padding: "5px 12px" }}>
+                        📞 본인: <span onClick={() => { if (window.confirm(`${m.studentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.studentPhone}`; }} style={{ color: "#fff", cursor: "pointer" }}>{m.studentPhone}</span>
+                      </div>
                     )}
                   </div>
                 )}
