@@ -370,7 +370,7 @@ function InstagramButton() {
 function YoutubeButton() {
   const [open, setOpen] = useState(false);
   const channels = [
-    { label: "농구교실", href: "https://www.youtube.com/@농구교실" },
+    { label: "농구교실", href: "https://www.youtube.com/@%EC%A0%95%ED%9D%A5%EC%A3%BC_%EC%97%B4%ED%98%88%EB%86%8D%EA%B5%AC" },
     { label: "shooter_no.0", href: "https://www.youtube.com/@shooter_no.0" },
   ];
   return (
