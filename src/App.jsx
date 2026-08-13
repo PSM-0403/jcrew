@@ -5,7 +5,7 @@ import { useMemberStore }      from "./stores/memberStore";
 import { useClassStore }       from "./stores/classStore";
 import { useAttendanceStore }  from "./stores/attendanceStore";
 
-import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment, insertMakeupRequest, assignMakeupRequest, fetchMemberUnreadCount } from "./api/db";
+import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment, insertMakeupRequest, assignMakeupRequest, fetchMemberUnreadCount, sendMessage } from "./api/db";
 import { supabase } from "./api/supabase";
 
 import { Toast, TabBar }   from "./components/Common";
@@ -161,9 +161,17 @@ export default function App() {
   };
 
   const handleAssignMakeup = async (id, assignmentData) => {
+    const req = makeupRequests.find(r => r.id === id);
     removeMakeupRequest(id);
     try {
       await assignMakeupRequest(id, assignmentData);
+      if (req?.member_id) {
+        const cls = classes.find(c => c.id === assignmentData.assignedClassId);
+        const dateStr = assignmentData.assignedDate || "날짜 미정";
+        const clsStr = cls ? `${cls.title} ${cls.startTime}` : "수업 미정";
+        const memo = assignmentData.assignedMemo ? ` / 메모: ${assignmentData.assignedMemo}` : "";
+        await sendMessage(req.member_id, `📅 보강이 배정됐습니다!\n일시: ${dateStr}\n수업: ${clsStr}${memo}`, 'coach');
+      }
       showToast("보강 배정 완료!");
     } catch {
       await loadMakeupRequests();

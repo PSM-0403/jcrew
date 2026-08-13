@@ -955,7 +955,8 @@ export function CoachMembers({ members, classes, onTogglePaid, onAssign, onUpdat
                 <span style={{ color: attendColor, marginLeft: 6 }}>{m.attendance}%</span>
                 {m.parentPhone && (
                   <span style={{ marginLeft: 6, color: "#ffffff55" }}>
-                    📞 {m.schoolLevel === "성인" ? "연락처" : "부모"}: {m.parentPhone}{m.studentPhone ? ` / 본인: ${m.studentPhone}` : ""}
+                    📞 {m.schoolLevel === "성인" ? "연락처" : "부모"}: <span onClick={e => { e.stopPropagation(); if (window.confirm(`${m.parentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.parentPhone}`; }} style={{ color: "#ffffff55", cursor: "pointer" }}>{m.parentPhone}</span>
+                    {m.studentPhone && <> / 본인: <span onClick={e => { e.stopPropagation(); if (window.confirm(`${m.studentPhone}에 전화하시겠어요?`)) window.location.href = `tel:${m.studentPhone}`; }} style={{ color: "#ffffff55", cursor: "pointer" }}>{m.studentPhone}</span></>}
                   </span>
                 )}
               </div>

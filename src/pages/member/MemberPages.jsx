@@ -788,7 +788,7 @@ export function MemberChatbot({ member, classes }) {
 - 인스타그램: @jcrew_basket (농구교실), @jcrew_legacy (동호회), @j.crew_youth (유소년)
 - 카카오채널: https://pf.kakao.com/_xkMxmvxj
 - 블로그: https://blog.naver.com/jcrew_basket
-- 유튜브: 농구교실, shooter_no.0
+- 유튜브: 농구교실(https://www.youtube.com/@%EC%A0%95%ED%9D%A5%EC%A3%BC_%EC%97%B4%ED%98%88%EB%86%8D%EA%B5%AC), shooter_no.0(https://www.youtube.com/@shooter_no.0)
 - 수강료: 90분 주1회 100,000원(계좌)/110,000원(카드), 120분 주1회 120,000원(계좌)/132,000원(카드), 형제 등록 시 10% 할인
 
 [회원 정보]
