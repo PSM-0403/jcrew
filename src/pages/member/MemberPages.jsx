@@ -8,45 +8,11 @@ import { COLORS, LEVEL_COLOR } from "../../constants";
 // ── 회원: 홈 ──────────────────────────────────────────────
 const BANK_INFO = { bank: "우리은행", account: "1002-629-447772", holder: "정흥주", amount: "월 수강료" };
 
-const GRADE_OPTIONS_HOME = { 초등: ["1","2","3","4","5","6"], 중등: ["1","2","3"], 고등: ["1","2","3"] };
-
-export function MemberHome({ member, classes, onBankPayment, onCardPayment, onProfileUpdate }) {
+export function MemberHome({ member, classes, onBankPayment, onCardPayment }) {
   const myClasses = classes.filter(c => member.classes.includes(c.id));
   const [payModal, setPayModal]     = useState(null);
   const [cardNum, setCardNum]       = useState("");
   const [cardPaying, setCardPaying] = useState(false);
-  const [profileModal, setProfileModal] = useState(false);
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileForm, setProfileForm]   = useState({
-    password: "", passwordConfirm: "",
-    parentPhone: member.parentPhone ?? "",
-    gender: member.gender ?? "",
-    schoolLevel: member.schoolLevel ?? "초등",
-    grade: member.grade ?? "1",
-    schoolName: member.schoolName ?? "",
-    note: member.note ?? "",
-  });
-  const setP = (key, val) => setProfileForm(p => ({ ...p, [key]: val }));
-  const isAdult = profileForm.schoolLevel === "성인";
-
-  const handleProfileSave = async () => {
-    if (profileForm.password && profileForm.password !== profileForm.passwordConfirm) {
-      return alert("비밀번호가 일치하지 않습니다.");
-    }
-    setProfileSaving(true);
-    try {
-      await updateMemberProfile(member.id, {
-        ...profileForm,
-        password: profileForm.password || member.password,
-      });
-      onProfileUpdate?.();
-      setProfileModal(false);
-      alert("정보가 수정됐습니다!");
-    } catch {
-      alert("저장 실패. 다시 시도해주세요.");
-    }
-    setProfileSaving(false);
-  };
   const [cancellations, setCancellations] = useState([]);
 
   useEffect(() => {
@@ -173,85 +139,6 @@ export function MemberHome({ member, classes, onBankPayment, onCardPayment, onPr
             ))
         }
       </div>
-
-      {/* ── 내 정보 수정 모달 ── */}
-      {profileModal && (
-        <div onClick={() => !profileSaving && setProfileModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, overflowY: "auto" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: COLORS.NAVY, borderRadius: 20, padding: 28, width: "100%", maxWidth: 400, border: "1px solid #ffffff22", margin: "auto" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>내 정보 수정</div>
-            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 20 }}>이름은 수정할 수 없습니다.</div>
-
-            {[
-              { label: "비밀번호 변경 (선택)", key: "password", type: "password", placeholder: "새 비밀번호" },
-              { label: "비밀번호 확인", key: "passwordConfirm", type: "password", placeholder: "새 비밀번호 재입력" },
-              { label: isAdult ? "본인 연락처" : "부모님 연락처", key: "parentPhone", type: "tel", placeholder: "010-0000-0000" },
-            ].map(f => (
-              <div key={f.key} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>{f.label}</div>
-                <input type={f.type} value={profileForm[f.key]}
-                  onChange={e => setP(f.key, e.target.value)}
-                  placeholder={f.placeholder}
-                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, boxSizing: "border-box", fontFamily: "inherit" }} />
-              </div>
-            ))}
-
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>성별</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["남", "여"].map(g => (
-                  <button key={g} onClick={() => setP("gender", g)} style={{
-                    flex: 1, padding: "9px 0", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
-                    border: `1.5px solid ${profileForm.gender === g ? COLORS.ORANGE : "#ffffff22"}`,
-                    background: profileForm.gender === g ? `${COLORS.ORANGE}22` : "transparent",
-                    color: profileForm.gender === g ? COLORS.ORANGE : "#8899AA", fontSize: 13, fontWeight: 600,
-                  }}>{g}</button>
-                ))}
-              </div>
-            </div>
-
-            {!isAdult && (
-              <>
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>학년</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {(GRADE_OPTIONS_HOME[profileForm.schoolLevel] ?? []).map(g => (
-                      <button key={g} onClick={() => setP("grade", g)} style={{
-                        padding: "7px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
-                        border: `1.5px solid ${profileForm.grade === g ? COLORS.ORANGE : "#ffffff22"}`,
-                        background: profileForm.grade === g ? `${COLORS.ORANGE}22` : "transparent",
-                        color: profileForm.grade === g ? COLORS.ORANGE : "#8899AA", fontSize: 13, fontWeight: 600,
-                      }}>{g}학년</button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>학교 이름 (선택)</div>
-                  <input value={profileForm.schoolName} onChange={e => setP("schoolName", e.target.value)}
-                    placeholder="예: 강남초등학교"
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, boxSizing: "border-box", fontFamily: "inherit" }} />
-                </div>
-              </>
-            )}
-
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 5 }}>특이사항 (선택)</div>
-              <textarea value={profileForm.note} onChange={e => setP("note", e.target.value)}
-                placeholder="부상 이력, 알레르기 등"
-                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 60, boxSizing: "border-box", fontFamily: "inherit", resize: "none" }} />
-            </div>
-
-            <button onClick={handleProfileSave} disabled={profileSaving} style={{
-              width: "100%", padding: "12px 0", borderRadius: 12, border: "none",
-              background: profileSaving ? "#ffffff22" : COLORS.ORANGE, color: profileSaving ? "#8899AA" : "#fff",
-              fontSize: 14, fontWeight: 700, cursor: profileSaving ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 8,
-            }}>{profileSaving ? "저장 중..." : "저장"}</button>
-            <button onClick={() => setProfileModal(false)} disabled={profileSaving} style={{
-              width: "100%", padding: "10px 0", borderRadius: 12, background: "transparent",
-              color: "#8899AA", border: "1px solid #ffffff22", fontSize: 13, cursor: "pointer", fontFamily: "inherit",
-            }}>취소</button>
-          </div>
-        </div>
-      )}
 
       {/* ── 납부 모달 ── */}
       {payModal && (
