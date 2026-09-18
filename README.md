@@ -15,7 +15,7 @@
 
 ## Tech Stack
 
-`React 19` `Vite` `Zustand` `Supabase` `OpenAI API` `Vercel`
+`React 19` `Vite` `Zustand` `Supabase` `OpenAI API` `Vercel` `PWA`
 
 | 구분 | 기술 |
 |---|---|
@@ -23,7 +23,7 @@
 | 상태관리 | Zustand |
 | 백엔드/DB | Supabase (PostgreSQL + Realtime + Storage) |
 | AI | OpenAI GPT-4o-mini |
-| 배포 | Vercel |
+| 배포 | Vercel (Serverless Functions + PWA) |
 
 ---
 
@@ -134,6 +134,8 @@
 | GPT-4o-mini 선택 | 응답 속도와 비용의 균형, 한국어 품질 적합 |
 | 규칙 기반 + AI 혼합 | 이탈 위험 감지는 규칙 기반으로 정확도 확보, AI는 코멘트 생성에만 활용해 비용 절감 |
 | hidden_by_coach 컬럼 | 강사가 채팅방을 나가도 회원 메시지 이력은 유지 (비대칭 삭제) |
+| Vercel Serverless Function 프록시 | OpenAI API 키를 서버사이드에서만 사용, 브라우저 번들 노출 차단 |
+| PWA 적용 | 홈 화면 설치·전체화면 실행으로 네이티브 앱에 가까운 UX 제공 |
 
 ---
 
