@@ -273,7 +273,7 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
   };
 
   const cls            = classes.find(c => c.id === selectedClass);
-  const classDates     = getClassDates(cls?.days, year, month);
+  const classDates     = getClassDates(filterDay ? [filterDay] : cls?.days, year, month);
   const cancelled      = cancellations[selectedClass] ?? [];
   const enrolledMembers = selectedClass ? members.filter(m => (m.classes ?? []).includes(selectedClass)) : [];
   const dateAtt        = attendance[selectedClass]?.[selectedDate] ?? {};
