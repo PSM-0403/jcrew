@@ -857,7 +857,7 @@ export function MemberProfile({ member, onUpdate, showToast }) {
     try {
       await updateMemberProfile(member.id, {
         ...form,
-        password: form.password || member.password,
+        password: form.password || undefined,
       });
       onUpdate?.();
       showToast("내 정보가 수정됐습니다!");

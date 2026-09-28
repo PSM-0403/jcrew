@@ -204,7 +204,6 @@ export default function App() {
   if (showSignup) return <SignupPage onSignup={signup} onBack={() => setShowSignup(false)} />;
   if (!role) return (
     <LoginPage
-      members={members}
       onCoach={() => { setRole("coach"); setTab("home"); }}
       onMember={(id) => { setMemberId(id); setRole("member"); setTab("home"); }}
       onSignup={() => setShowSignup(true)}

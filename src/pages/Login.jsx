@@ -4,7 +4,7 @@ import logo from "../assets/logo.png";
 
 const COACH_PASSWORD = "jcrew1234";
 
-export function LoginPage({ onCoach, onMember, onSignup, members }) {
+export function LoginPage({ onCoach, onMember, onSignup }) {
   const [mode, setMode]     = useState(null); // null | "coach" | "member"
   const [name, setName]     = useState("");
   const [phone4, setPhone4] = useState("");
@@ -18,13 +18,20 @@ export function LoginPage({ onCoach, onMember, onSignup, members }) {
     else { setError("비밀번호가 올바르지 않습니다."); setPw(""); }
   };
 
-  const handleMemberSubmit = () => {
-    const found = members.find(m => {
-      const last4 = (m.parentPhone ?? "").replace(/\D/g, "").slice(-4);
-      return m.name === name.trim() && last4 === phone4 && m.password === pw;
-    });
-    if (found) { onMember(found.id); }
-    else { setError("이름, 연락처 뒷 4자리 또는 비밀번호가 올바르지 않습니다."); setPw(""); }
+  const handleMemberSubmit = async () => {
+    setError("");
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), phone4, password: pw }),
+      });
+      const data = await res.json();
+      if (res.ok && data.id) { onMember(data.id); }
+      else { setError(data.error ?? "로그인 실패"); setPw(""); }
+    } catch {
+      setError("서버 오류. 잠시 후 다시 시도해주세요."); setPw("");
+    }
   };
 
   const isCoachMode  = mode === "coach";

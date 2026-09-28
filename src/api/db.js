@@ -6,7 +6,6 @@ function toMember(row, enrollments = [], payments = [], attendance = null) {
   return {
     id: row.id,
     name: row.name,
-    password: row.password ?? '1234',
     parentPhone: row.phone ?? '',
     joinDate: row.created_at?.split('T')[0] ?? '',
     category: row.category ?? '성인',
@@ -135,8 +134,7 @@ export async function deleteMember(id) {
 }
 
 export async function updateMemberProfile(id, data) {
-  const { error } = await supabase.from('members').update({
-    password:      data.password,
+  const fields = {
     phone:         data.parentPhone,
     gender:        data.gender,
     school_level:  data.schoolLevel,
@@ -146,7 +144,9 @@ export async function updateMemberProfile(id, data) {
     shuttle:       data.shuttle,
     address:       data.address,
     note:          data.note,
-  }).eq('id', id);
+  };
+  if (data.password) fields.password = data.password;
+  const { error } = await supabase.from('members').update(fields).eq('id', id);
   if (error) throw error;
 }
 
