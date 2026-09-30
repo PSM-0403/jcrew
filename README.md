@@ -135,6 +135,8 @@
 | 규칙 기반 + AI 혼합 | 이탈 위험 감지는 규칙 기반으로 정확도 확보, AI는 코멘트 생성에만 활용해 비용 절감 |
 | hidden_by_coach 컬럼 | 강사가 채팅방을 나가도 회원 메시지 이력은 유지 (비대칭 삭제) |
 | Vercel Serverless Function 프록시 | OpenAI API 키를 서버사이드에서만 사용, 브라우저 번들 노출 차단 |
+| 로그인 서버사이드 처리 | 회원 비밀번호를 클라이언트에 노출하지 않도록 인증 로직을 Vercel Serverless Function으로 이동 |
+| Supabase RLS 활성화 | 전체 테이블 Row-Level Security 적용으로 비인가 접근 차단 |
 | PWA 적용 | 홈 화면 설치·전체화면 실행으로 네이티브 앱에 가까운 UX 제공 |
 
 ---
@@ -156,6 +158,7 @@
 | notices | 공지사항 |
 | gallery | 갤러리 사진·영상 |
 | agent_results | AI 에이전트 실행 결과 |
+| class_cancellations | 휴강 처리 날짜 |
 
 ---
 
@@ -166,12 +169,17 @@ npm install
 npm run dev
 ```
 
-### 환경변수 설정 (.env)
+### 환경변수 설정
 
+**.env (클라이언트)**
 ```
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_OPENAI_API_KEY=your_openai_api_key
+```
+
+**Vercel 환경변수 (서버사이드 전용)**
+```
+OPENAI_API_KEY=your_openai_api_key
 ```
 
 ---
