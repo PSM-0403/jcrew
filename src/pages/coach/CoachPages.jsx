@@ -48,11 +48,11 @@ function OperationsMetricsCard({ members }) {
 
       {monthly.length > 0 && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 72px", gap: 8, fontSize: 11, color: "#8899AA", marginBottom: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "48px 1fr 96px", gap: 8, fontSize: 11, color: "#8899AA", marginBottom: 6 }}>
             <span>월</span><span>출석률</span><span style={{ textAlign: "right" }}>무단 결석 비율</span>
           </div>
           {monthly.map(m => (
-            <div key={m.month} style={{ display: "grid", gridTemplateColumns: "56px 1fr 72px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+            <div key={m.month} style={{ display: "grid", gridTemplateColumns: "48px 1fr 96px", gap: 8, alignItems: "center", marginBottom: 8 }}>
               <span style={{ fontSize: 12, color: "#CBD5E1" }}>{Number(m.month.slice(5))}월</span>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#ffffff11", overflow: "hidden" }}>

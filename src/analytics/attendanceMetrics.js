@@ -69,21 +69,28 @@ export function computeAttendanceStats(rows) {
   return stats;
 }
 
-// 위험 단계: 무단 결석 규칙이 핵심이고, 기존의 미납·출석률 조건은 그대로 유지한다.
-export function classifyRisk(member, stats) {
+// 위험 단계와 그 사유: 무단 결석 규칙이 핵심이고, 기존의 미납·출석률 조건은 그대로 유지한다.
+// 사유를 함께 돌려주는 이유: 같은 "높음"이라도 연락이 끊긴 아이와 미납·저출석인 아이는
+// 코치가 해야 할 조치가 다르다.
+export function classifyRiskWithReason(member, stats) {
   const s = stats ?? { total: 0, consecutiveUnexcused: 0, recentUnexcused: 0, rate: null };
   const rate = s.rate ?? member.attendance ?? 100;
   const hasData = s.total >= RISK_RULES.minSessionsForRate;
   const longSilence = s.consecutiveUnexcused >= RISK_RULES.consecutiveUnexcused;
   const onAndOff = s.recentUnexcused >= RISK_RULES.recentUnexcused;
+  const silenceReason = `연속 무단 결석 ${s.consecutiveUnexcused}회`;
 
-  if (longSilence && !member.paid)               return "매우높음";
-  if (longSilence)                               return "높음";
-  if (!member.paid && hasData && rate < 60)      return "높음";
-  if (onAndOff)                                  return "보통";
-  if (hasData && rate < 50)                      return "보통";
-  if (!member.paid && hasData && rate < 70)      return "보통";
-  return null;
+  if (longSilence && !member.paid)               return { level: "매우높음", reason: `${silenceReason} + 미납` };
+  if (longSilence)                               return { level: "높음", reason: silenceReason };
+  if (!member.paid && hasData && rate < 60)      return { level: "높음", reason: `미납 + 출석률 ${rate}%` };
+  if (onAndOff)                                  return { level: "보통", reason: `최근 ${RISK_RULES.recentWindow}회 중 무단 결석 ${s.recentUnexcused}회` };
+  if (hasData && rate < 50)                      return { level: "보통", reason: `출석률 ${rate}%` };
+  if (!member.paid && hasData && rate < 70)      return { level: "보통", reason: `미납 + 출석률 ${rate}%` };
+  return { level: null, reason: "" };
+}
+
+export function classifyRisk(member, stats) {
+  return classifyRiskWithReason(member, stats).level;
 }
 
 // ── 운영 지표 (코치 대시보드 카드) ─────────────────────────────

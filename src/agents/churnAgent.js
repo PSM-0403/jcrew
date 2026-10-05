@@ -1,7 +1,7 @@
 // ── 이탈 위험 회원 분석 ────────────────────────────────────
 import { callAI } from "../api/openai";
 import { fetchAllAttendanceStats, saveAgentResult, updateMemberRiskAlert } from "../api/db";
-import { classifyRisk, RISK_ORDER } from "../analytics/attendanceMetrics";
+import { classifyRiskWithReason, RISK_ORDER } from "../analytics/attendanceMetrics";
 
 export async function runChurnAgent(members, { addLog }) {
   addLog("📊 [이탈 위험 회원 분석] 시작", "start");
@@ -9,16 +9,19 @@ export async function runChurnAgent(members, { addLog }) {
 
   const stats = await fetchAllAttendanceStats();
 
-  // 위험 단계 규칙은 analytics/attendanceMetrics.js의 classifyRisk에 정의돼 있다.
+  // 위험 단계 규칙은 analytics/attendanceMetrics.js의 classifyRiskWithReason에 정의돼 있다.
   const memberStats = members.map(m => {
     const s = stats[m.id] ?? { total: 0, consecutiveUnexcused: 0, recentUnexcused: 0, rate: null };
     const rate = s.rate ?? m.attendance ?? 100;
-    return { ...m, realRate: rate, stats: s, riskLevel: classifyRisk(m, s) };
+    const { level, reason } = classifyRiskWithReason(m, s);
+    return { ...m, realRate: rate, stats: s, riskLevel: level, riskReason: reason };
   });
 
+  // 같은 단계 안에서는 무단 결석으로 잡힌 회원(연락이 끊긴 경우)을 먼저 보여준다.
+  const isSilence = (m) => m.riskReason.includes("무단");
   const riskMembers = memberStats
     .filter(m => m.riskLevel)
-    .sort((a, b) => RISK_ORDER[a.riskLevel] - RISK_ORDER[b.riskLevel]);
+    .sort((a, b) => RISK_ORDER[a.riskLevel] - RISK_ORDER[b.riskLevel] || isSilence(b) - isSilence(a));
 
   addLog(`⚠ 위험 회원 ${riskMembers.length}명 감지`, "warn");
 
@@ -31,7 +34,7 @@ export async function runChurnAgent(members, { addLog }) {
     await Promise.all(
       members.filter(m => m.riskAlert).map(m => updateMemberRiskAlert(m.id, null, ''))
     );
-    const updatedMembers = memberStats.map(({ stats: _s, realRate: _r, riskLevel, ...m }) => ({
+    const updatedMembers = memberStats.map(({ stats: _s, realRate: _r, riskLevel, riskReason: _reason, ...m }) => ({
       ...m, riskAlert: null, aiComment: '',
     }));
     addLog("✅ 분석 완료", "done");
@@ -42,7 +45,7 @@ export async function runChurnAgent(members, { addLog }) {
   addLog("🤖 AI 코멘트 생성 중...", "think");
 
   const memberList = riskMembers.map(m =>
-    `${m.name}: 출석률 ${m.realRate}%, ${m.paid ? "납부완료" : "미납"}, 연속 무단결석 ${m.stats.consecutiveUnexcused}회, 최근 5회 중 무단 ${m.stats.recentUnexcused}회`
+    `${m.name}: 위험 사유 ${m.riskReason}, 출석률 ${m.realRate}%, ${m.paid ? "납부완료" : "미납"}`
   ).join("\n");
 
   let aiLines = [];
@@ -68,7 +71,13 @@ export async function runChurnAgent(members, { addLog }) {
   }
 
   const result = riskMembers.map(m =>
-    `[${m.riskLevel}] ${m.name} — 출석률 ${m.realRate}%, ${m.paid ? "납부완료" : "미납"}, 연속 무단결석 ${m.stats.consecutiveUnexcused}회, 최근 5회 중 무단 ${m.stats.recentUnexcused}회`
+    // 사유에 이미 들어간 정보(출석률, 미납)는 괄호에서 반복하지 않는다.
+    `[${m.riskLevel}] ${m.name} — ${m.riskReason}` + (() => {
+      const extra = [];
+      if (!m.riskReason.includes("출석률")) extra.push(`출석률 ${m.realRate}%`);
+      if (!m.riskReason.includes("미납")) extra.push(m.paid ? "납부완료" : "미납");
+      return extra.length ? ` (${extra.join(", ")})` : "";
+    })()
   ).join("\n");
 
   addLog("💾 저장 중...", "info");
@@ -79,7 +88,7 @@ export async function runChurnAgent(members, { addLog }) {
 
   addLog("✅ 분석 완료", "done");
 
-  const updatedMembers = memberStats.map(({ stats: _s, realRate: _r, riskLevel, ...m }) => ({
+  const updatedMembers = memberStats.map(({ stats: _s, realRate: _r, riskLevel, riskReason: _reason, ...m }) => ({
     ...m,
     riskAlert: riskLevel,
     aiComment: commentMap[m.id] ?? '',
