@@ -571,7 +571,9 @@ export function MemberMyClasses({ member, classes, onCancel, onMakeupRequest }) 
             <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>보강 들을 수업</div>
             <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 16 }}>
               {TIME_SLOTS.map(ts => {
+                // 본인이 다니는 수업은 뺀다: 같은 날 정규 출결과 겹쳐 보강 기록이 정규 출결을 덮어쓰지 않도록.
                 const slotClasses = classes
+                  .filter(c => !member.classes.includes(c.id))
                   .filter(c => timeSlotOf(c.startTime) === ts.key)
                   .sort((a, b) => String(a.startTime).localeCompare(String(b.startTime)));
                 if (slotClasses.length === 0) return null;

@@ -638,9 +638,16 @@ export async function fetchMonthAttendance(year, month) {
   const start   = `${year}-${pad(month)}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end     = `${year}-${pad(month)}-${pad(lastDay)}`;
-  const { data, error } = await supabase.from('attendance')
-    .select('*').gte('date', start).lte('date', end);
-  if (error) throw error;
+  // 한 달 출결도 1,000행을 넘을 수 있으므로 나눠서 끝까지 읽는다 (2026-08 기준 690행).
+  const data = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error } = await supabase.from('attendance')
+      .select('*').gte('date', start).lte('date', end)
+      .order('id').range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    data.push(...(page ?? []));
+    if ((page ?? []).length < PAGE_SIZE) break;
+  }
   const attendance = {};
   const absenceTypes = {};
   for (const row of data ?? []) {
