@@ -1,4 +1,7 @@
 import { supabase } from './supabase';
+import { computeAttendanceStats } from '../analytics/attendanceMetrics';
+
+const ATTENDANCE_STAT_COLUMNS = 'member_id, date, status, absence_type, is_makeup';
 
 // ── Transform helpers ─────────────────────────────────────────
 
@@ -44,6 +47,24 @@ function toClass(row) {
   };
 }
 
+// Supabase는 한 번에 최대 1,000행까지만 돌려주므로, 출결처럼 계속 쌓이는 테이블은
+// 나눠서 끝까지 읽는다. (예전에는 1,650건 중 최근 1,000건만 읽혀 출석률이 일부 기간으로만 계산됐다.)
+const PAGE_SIZE = 1000;
+
+async function fetchAllAttendanceRows(columns) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('attendance')
+      .select(columns)
+      .order('id')
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < PAGE_SIZE) return rows;
+  }
+}
+
 // ── Members ───────────────────────────────────────────────────
 
 export async function fetchMembers() {
@@ -51,31 +72,23 @@ export async function fetchMembers() {
     { data: rows,        error: e1 },
     { data: enrollments, error: e2 },
     { data: payments,    error: e3 },
-    { data: attData,     error: e4 },
+    attData,
   ] = await Promise.all([
     supabase.from('members').select('*').eq('status', 'active').order('id'),
     supabase.from('enrollments').select('member_id, class_id'),
     supabase.from('payments').select('*').order('paid_at'),
-    supabase.from('attendance').select('member_id, status'),
+    fetchAllAttendanceRows(ATTENDANCE_STAT_COLUMNS),
   ]);
   if (e1) throw e1;
   if (e2) throw e2;
   if (e3) throw e3;
-  if (e4) throw e4;
 
-  // 실제 출결 데이터로 출석률 계산
-  const attStats = {};
-  for (const row of attData ?? []) {
-    if (!attStats[row.member_id]) attStats[row.member_id] = { total: 0, attended: 0 };
-    attStats[row.member_id].total++;
-    if (row.status === '출석') attStats[row.member_id].attended++;
-  }
+  // 실제 출결 데이터로 출석률 계산 (정의는 analytics/attendanceMetrics.js)
+  const attStats = computeAttendanceStats(attData);
 
   return (rows ?? []).map(r => {
     const s = attStats[r.id];
-    const attendance = s && s.total > 0
-      ? Math.round((s.attended / s.total) * 100)
-      : (r.attendance ?? 100);
+    const attendance = s && s.rate !== null ? s.rate : (r.attendance ?? 100);
     return toMember(r, enrollments ?? [], payments ?? [], attendance);
   });
 }
@@ -400,10 +413,12 @@ export async function fetchMakeupRequests() {
   return data ?? [];
 }
 
-export async function insertMakeupRequest({ memberId, memberName, classId, classTitle, preferredDate, preferredTime, note }) {
+// classId: 결석한 원래 수업, requestedClassId + preferredDate: 회원이 목록에서 고른 보강 수업과 날짜
+export async function insertMakeupRequest({ memberId, memberName, classId, classTitle, requestedClassId, preferredDate, preferredTime, note }) {
   const { error } = await supabase.from('makeup_requests').insert({
     member_id: memberId, member_name: memberName,
     class_id: classId, class_title: classTitle,
+    requested_class_id: requestedClassId || null,
     preferred_date: preferredDate || null,
     preferred_time: preferredTime || '',
     note: note || '',
@@ -411,45 +426,34 @@ export async function insertMakeupRequest({ memberId, memberName, classId, class
   if (error) throw error;
 }
 
-export async function fetchAllAttendanceStats() {
-  const { data, error } = await supabase
-    .from('attendance')
-    .select('member_id, status, date')
-    .order('date', { ascending: false });
+// 승인된 보강을 보강 수업 날짜별로 묶는다: { [classId]: { [date]: [memberId, ...] } }
+// 출석 체크 화면에서 그 날짜의 그 수업에만 보강 회원을 함께 보여주기 위함.
+export async function fetchMonthMakeups(year, month) {
+  const pad   = (n) => String(n).padStart(2, '0');
+  const start = `${year}-${pad(month)}-01`;
+  const end   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+  const { data, error } = await supabase.from('makeup_requests')
+    .select('member_id, assigned_class_id, assigned_date')
+    .in('status', ['assigned', 'done'])
+    .gte('assigned_date', start).lte('assigned_date', end);
   if (error) throw error;
-
-  const stats = {};
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
+  const result = {};
   for (const row of data ?? []) {
-    if (!stats[row.member_id]) {
-      stats[row.member_id] = { total: 0, attended: 0, absent: 0, recentAbsent: 0, dates: [] };
-    }
-    const s = stats[row.member_id];
-    s.total++;
-    if (row.status === '출석') s.attended++;
-    if (row.status === '결석') {
-      s.absent++;
-      if (new Date(row.date) >= thirtyDaysAgo) s.recentAbsent++;
-    }
-    s.dates.push({ date: row.date, status: row.status });
+    if (!row.assigned_class_id || !row.assigned_date) continue;
+    const byDate = (result[row.assigned_class_id] ??= {});
+    (byDate[row.assigned_date] ??= []).push(row.member_id);
   }
+  return result;
+}
 
-  // 연속 결석 계산
-  for (const mId in stats) {
-    const s = stats[mId];
-    const sorted = [...s.dates].sort((a, b) => b.date.localeCompare(a.date));
-    let consecutive = 0;
-    for (const d of sorted) {
-      if (d.status === '결석') consecutive++;
-      else break;
-    }
-    s.consecutiveAbsent = consecutive;
-    s.rate = s.total > 0 ? Math.round((s.attended / s.total) * 100) : null;
-  }
+export async function fetchAllAttendanceStats() {
+  const data = await fetchAllAttendanceRows(ATTENDANCE_STAT_COLUMNS);
+  return computeAttendanceStats(data);
+}
 
-  return stats;
+// 운영 지표 카드용: 회원별 통계와 월별 집계를 함께 계산할 수 있게 원본 행을 돌려준다.
+export async function fetchAttendanceRowsForMetrics() {
+  return fetchAllAttendanceRows(ATTENDANCE_STAT_COLUMNS);
 }
 
 export async function fetchMemberAttendance(memberId) {
@@ -607,7 +611,8 @@ export async function fetchRecentClassNotes(classIds, limit = 5) {
 
 // ── Attendance ────────────────────────────────────────────────
 
-export async function saveAttendance(memberId, classId, status, date) {
+// absenceType: 결석일 때만 '사전연락' | '무단', isMakeup: 보강 수업 출결이면 true
+export async function saveAttendance(memberId, classId, status, date, { absenceType = null, isMakeup = false } = {}) {
   const d = date ?? new Date().toISOString().split('T')[0];
   if (!status) {
     const { error } = await supabase.from('attendance')
@@ -616,12 +621,18 @@ export async function saveAttendance(memberId, classId, status, date) {
     return;
   }
   const { error } = await supabase.from('attendance').upsert(
-    { member_id: memberId, class_id: classId, date: d, status },
+    {
+      member_id: memberId, class_id: classId, date: d, status,
+      absence_type: status === '결석' ? absenceType : null,
+      is_makeup: isMakeup,
+    },
     { onConflict: 'member_id,class_id,date' }
   );
   if (error) throw error;
 }
 
+// attendance: { [classId]: { [date]: { [memberId]: status } } }
+// absenceTypes: 같은 구조로 결석 사유('사전연락' | '무단')만 담는다
 export async function fetchMonthAttendance(year, month) {
   const pad     = (n) => String(n).padStart(2, '0');
   const start   = `${year}-${pad(month)}-01`;
@@ -630,13 +641,16 @@ export async function fetchMonthAttendance(year, month) {
   const { data, error } = await supabase.from('attendance')
     .select('*').gte('date', start).lte('date', end);
   if (error) throw error;
-  const result = {};
+  const attendance = {};
+  const absenceTypes = {};
   for (const row of data ?? []) {
-    if (!result[row.class_id]) result[row.class_id] = {};
-    if (!result[row.class_id][row.date]) result[row.class_id][row.date] = {};
-    result[row.class_id][row.date][row.member_id] = row.status;
+    ((attendance[row.class_id] ??= {})[row.date] ??= {})[row.member_id] = row.status;
+    if (row.status === '결석') {
+      // 사유가 비어 있는 예전 결석은 무단으로 본다 (attendanceMetrics.isUnexcusedAbsence와 같은 기준)
+      ((absenceTypes[row.class_id] ??= {})[row.date] ??= {})[row.member_id] = row.absence_type ?? '무단';
+    }
   }
-  return result;
+  return { attendance, absenceTypes };
 }
 
 export async function fetchCancellations(year, month) {

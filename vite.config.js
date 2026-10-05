@@ -38,5 +38,12 @@ export default defineConfig({
       },
     }),
   ],
-  server: { host: true },
+  server: {
+    host: true,
+    // /api/*(로그인, AI 챗봇)는 Vercel 서버 함수라 `vite` 개발 서버에는 없다.
+    // 로컬 개발 중에는 배포된 사이트의 서버 함수로 넘긴다 (같은 Supabase DB 사용).
+    proxy: {
+      '/api': { target: 'https://jcrewbasketball.vercel.app', changeOrigin: true },
+    },
+  },
 })

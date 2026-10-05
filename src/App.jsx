@@ -38,7 +38,7 @@ export default function App() {
   } = useMemberStore();
 
   const { classes, addClass, updateClass, deleteClass, updateEnrolled } = useClassStore();
-  const { attendance, cancellations, year, month, mark, setCancellation, setMonth } = useAttendanceStore();
+  const { attendance, absenceTypes, makeups, cancellations, year, month, mark, setAbsenceType, setCancellation, setMonth, load: loadAttendance } = useAttendanceStore();
 
   const me      = members.find(m => m.id === memberId);
   const isCoach = role === "coach";
@@ -153,6 +153,11 @@ export default function App() {
   const handleMakeupRequest = async (form) => {
     try {
       await insertMakeupRequest({ ...form, memberId: me.id, memberName: me.name });
+      // 보강 신청 목록은 실시간 구독이 없어서, 코치가 바로 알 수 있도록 채팅으로도 알린다.
+      const requested = classes.find(c => c.id === form.requestedClassId);
+      if (requested && form.preferredDate) {
+        await sendMessage(me.id, `📅 보강 신청: ${form.preferredDate} ${requested.title} ${requested.startTime}\n(결석 수업: ${form.classTitle})`, 'member').catch(() => {});
+      }
       await loadMakeupRequests();
       showToast("보강 신청이 접수됐습니다. 강사 확인 후 배정됩니다.");
     } catch {
@@ -172,6 +177,7 @@ export default function App() {
         const memo = assignmentData.assignedMemo ? ` / 메모: ${assignmentData.assignedMemo}` : "";
         await sendMessage(req.member_id, `📅 보강이 배정됐습니다!\n일시: ${dateStr}\n수업: ${clsStr}${memo}`, 'coach');
       }
+      await loadAttendance(); // 배정된 보강 회원이 그 날짜 출석 체크 목록에 바로 보이도록
       showToast("보강 배정 완료!");
     } catch {
       await loadMakeupRequests();
@@ -265,7 +271,7 @@ export default function App() {
       <div style={{ padding: "16px 20px", maxWidth: 720, margin: "0 auto" }}>
         {/* ── 강사 ── */}
         {isCoach && tab === "home"       && <CoachDashboard members={members} classes={classes} pendingMembers={pendingMembers} onApprove={approve} onReject={reject} onTogglePaid={togglePaid} pendingPayments={pendingPayments} onConfirmPayment={handleConfirmPayment} makeupRequests={makeupRequests} onAssignMakeup={handleAssignMakeup} />}
-        {isCoach && tab === "attendance" && <CoachAttendance members={members} classes={classes} attendance={attendance} cancellations={cancellations} year={year} month={month} onMark={mark} onCancellation={setCancellation} onMonthChange={setMonth} onFeedback={(cId, r) => setFeedback(p => ({ ...p, [cId]: r }))} feedback={feedback} />}
+        {isCoach && tab === "attendance" && <CoachAttendance members={members} classes={classes} attendance={attendance} absenceTypes={absenceTypes} makeups={makeups} onSetAbsenceType={setAbsenceType} cancellations={cancellations} year={year} month={month} onMark={mark} onCancellation={setCancellation} onMonthChange={setMonth} onFeedback={(cId, r) => setFeedback(p => ({ ...p, [cId]: r }))} feedback={feedback} />}
         {isCoach && tab === "classes"    && <CoachClasses classes={classes} onAdd={addClass} onUpdate={updateClass} onDelete={deleteClass} />}
         {isCoach && tab === "members"    && <CoachMembers members={members} classes={classes} onTogglePaid={togglePaid} onAssign={handleAssignClass} onUpdateNote={updateNote} onDelete={deleteMember} onUpdateGender={updateGender} onUpdateInfo={updateMemberInfo} onChat={(mId) => { setChatMemberId(mId); setTab("messages"); }} />}
         {isCoach && tab === "gallery"    && <GalleryPage classes={classes} isCoach />}

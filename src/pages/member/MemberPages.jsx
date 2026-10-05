@@ -337,11 +337,33 @@ const TIME_SLOTS = [
   { key: "afternoon", label: "오후", sub: "12~18시" },
   { key: "evening",   label: "저녁", sub: "18시~" },
 ];
+const DAY_NAMES = ["일","월","화","수","목","금","토"];
+
+function timeSlotOf(startTime) {
+  const hour = parseInt(String(startTime ?? "").split(":")[0], 10);
+  if (Number.isNaN(hour) || hour < 12) return "morning";
+  return hour < 18 ? "afternoon" : "evening";
+}
+
+// 이번 달 남은 날짜 중 이 수업이 열리는 날 (보강은 결석 발생 월 이내에 사용)
+function getRemainingClassDates(days) {
+  const today = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const result = [];
+  for (let d = today.getDate(); d <= lastDay; d++) {
+    const date = new Date(today.getFullYear(), today.getMonth(), d);
+    if ((days ?? []).includes(DAY_NAMES[date.getDay()])) {
+      result.push(`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(d)}`);
+    }
+  }
+  return result;
+}
 
 export function MemberMyClasses({ member, classes, onCancel, onMakeupRequest }) {
   const myClasses = classes.filter(c => member.classes.includes(c.id));
   const [modal, setModal]           = useState(null);
-  const [form, setForm]             = useState({ preferredDate: "", preferredTime: "", note: "" });
+  const [form, setForm]             = useState({ requestedClassId: null, preferredDate: "", note: "" });
   const [submitting, setSubmitting] = useState(false);
   const [expandedId, setExpandedId]           = useState(null);
   const [absences, setAbsences]               = useState({});
@@ -379,12 +401,17 @@ export function MemberMyClasses({ member, classes, onCancel, onMakeupRequest }) 
 
   const openModal = (cls) => {
     setModal({ classId: cls.id, classTitle: cls.title });
-    setForm({ preferredDate: "", preferredTime: "", note: "" });
+    setForm({ requestedClassId: null, preferredDate: "", note: "" });
   };
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    await onMakeupRequest({ ...form, classId: modal.classId, classTitle: modal.classTitle });
+    const requested = classes.find(c => c.id === form.requestedClassId);
+    await onMakeupRequest({
+      ...form,
+      preferredTime: requested?.startTime ?? "",
+      classId: modal.classId, classTitle: modal.classTitle,
+    });
     setSubmitting(false);
     setModal(null);
   };
@@ -541,38 +568,73 @@ export function MemberMyClasses({ member, classes, onCancel, onMakeupRequest }) 
               ⚠ 보강은 결석 발생 월 이내에 사용해야 합니다.
             </div>
 
-            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>희망 날짜 (선택)</div>
-            <input type="date" value={form.preferredDate}
-              onChange={e => setForm(f => ({ ...f, preferredDate: e.target.value }))}
-              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, marginBottom: 16, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 14, boxSizing: "border-box", colorScheme: "dark" }} />
-
-            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>희망 시간대 (선택)</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>보강 들을 수업</div>
+            <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 16 }}>
               {TIME_SLOTS.map(ts => {
-                const active = form.preferredTime === ts.key;
+                const slotClasses = classes
+                  .filter(c => timeSlotOf(c.startTime) === ts.key)
+                  .sort((a, b) => String(a.startTime).localeCompare(String(b.startTime)));
+                if (slotClasses.length === 0) return null;
                 return (
-                  <button key={ts.key} onClick={() => setForm(f => ({ ...f, preferredTime: active ? "" : ts.key }))} style={{
-                    flex: 1, padding: "10px 0", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "center",
-                    border: `1.5px solid ${active ? COLORS.ORANGE : "#ffffff22"}`,
-                    background: active ? `${COLORS.ORANGE}22` : "transparent",
-                    color: active ? COLORS.ORANGE : "#8899AA", fontSize: 12, fontWeight: 600,
-                  }}>
-                    <div>{ts.label}</div>
-                    <div style={{ fontSize: 10, marginTop: 2, opacity: 0.7 }}>{ts.sub}</div>
-                  </button>
+                  <div key={ts.key} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: "#ffffff55", marginBottom: 6 }}>{ts.label} · {ts.sub}</div>
+                    {slotClasses.map(c => {
+                      const active = form.requestedClassId === c.id;
+                      return (
+                        <button key={c.id} onClick={() => setForm(f => ({ ...f, requestedClassId: c.id, preferredDate: "" }))} style={{
+                          width: "100%", textAlign: "left", padding: "10px 12px", borderRadius: 10, marginBottom: 6, cursor: "pointer", fontFamily: "inherit",
+                          border: `1.5px solid ${active ? COLORS.ORANGE : "#ffffff22"}`,
+                          background: active ? `${COLORS.ORANGE}22` : "transparent",
+                          color: active ? COLORS.ORANGE : "#CBD5E1", fontSize: 13,
+                        }}>
+                          <div style={{ fontWeight: 600 }}>{c.title}</div>
+                          <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>{c.days?.join("·")}요일 · {c.startTime}~{c.endTime}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 );
               })}
             </div>
+
+            {form.requestedClassId && (() => {
+              const dates = getRemainingClassDates(classes.find(c => c.id === form.requestedClassId)?.days);
+              return (
+                <>
+                  <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>보강 날짜</div>
+                  {dates.length === 0
+                    ? <div style={{ fontSize: 12, color: "#ffffff55", marginBottom: 16 }}>이번 달에 남은 수업 날짜가 없습니다.</div>
+                    : (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+                        {dates.map(date => {
+                          const active = form.preferredDate === date;
+                          const d = new Date(date + "T00:00:00");
+                          return (
+                            <button key={date} onClick={() => setForm(f => ({ ...f, preferredDate: date }))} style={{
+                              padding: "6px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit", fontSize: 12,
+                              border: `1.5px solid ${active ? COLORS.ORANGE : "#ffffff22"}`,
+                              background: active ? `${COLORS.ORANGE}22` : "transparent",
+                              color: active ? COLORS.ORANGE : "#8899AA",
+                            }}>{`${d.getMonth() + 1}/${d.getDate()}(${DAY_NAMES[d.getDay()]})`}</button>
+                          );
+                        })}
+                      </div>
+                    )
+                  }
+                </>
+              );
+            })()}
 
             <div style={{ fontSize: 12, color: "#8899AA", marginBottom: 6 }}>메모 (선택)</div>
             <textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
               placeholder="강사님께 전달할 내용"
               style={{ width: "100%", padding: "10px 14px", borderRadius: 10, marginBottom: 20, border: "1px solid #ffffff22", background: "#ffffff0D", color: "#fff", fontSize: 13, minHeight: 70, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }} />
 
-            <button onClick={handleSubmit} disabled={submitting} style={{
+            <button onClick={handleSubmit} disabled={submitting || !form.requestedClassId || !form.preferredDate} style={{
               width: "100%", padding: "12px 0", borderRadius: 12, border: "none",
-              background: submitting ? "#ffffff22" : COLORS.ORANGE, color: submitting ? "#8899AA" : "#fff",
-              fontSize: 14, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 8,
+              background: submitting || !form.requestedClassId || !form.preferredDate ? "#ffffff22" : COLORS.ORANGE,
+              color: submitting || !form.requestedClassId || !form.preferredDate ? "#8899AA" : "#fff",
+              fontSize: 14, fontWeight: 700, cursor: submitting || !form.requestedClassId || !form.preferredDate ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 8,
             }}>{submitting ? "신청 중..." : "보강 신청하기"}</button>
             <button onClick={() => setModal(null)} disabled={submitting} style={{ width: "100%", padding: "10px 0", borderRadius: 12, background: "transparent", color: "#8899AA", border: "1px solid #ffffff22", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
               취소

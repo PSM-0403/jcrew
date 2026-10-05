@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useAgentStore } from "../../stores/agentStore";
-import { fetchNotices, insertNotice, deleteNotice, fetchLatestAgentResult, saveClassNote, fetchClassNote, saveClassFeedback, fetchClassFeedback, sendMessage, fetchMemberAttendance } from "../../api/db";
+import { fetchNotices, insertNotice, deleteNotice, fetchLatestAgentResult, saveClassNote, fetchClassNote, saveClassFeedback, fetchClassFeedback, sendMessage, fetchMemberAttendance, fetchAttendanceRowsForMetrics } from "../../api/db";
+import { computeAttendanceStats, computeMonthlyOperations, countRiskLevels } from "../../analytics/attendanceMetrics";
 import { StatCard, MemberAvatar, AgentLog } from "../../components/Common";
 import { runChurnAgent }          from "../../agents/churnAgent";
 import { runFeedbackAgent }       from "../../agents/feedbackAgent";
@@ -8,6 +9,67 @@ import { runParentMessageAgent }  from "../../agents/parentMessageAgent";
 import { runMonthlyReportAgent }  from "../../agents/monthlyReportAgent";
 import { COLORS, fmtDate }  from "../../constants";
 
+
+// ── 강사: 운영 지표 카드 ───────────────────────────────────
+// 지표 정의는 analytics/attendanceMetrics.js. 위험 단계는 이탈 위험 에이전트와 같은 규칙으로
+// 바로 계산하므로, 에이전트를 실행하지 않아도 현재 상태를 볼 수 있다.
+const RISK_TILES = [
+  { key: "매우높음", color: "#EF4444" },
+  { key: "높음",     color: "#F97316" },
+  { key: "보통",     color: "#F59E0B" },
+  { key: "정상",     color: "#22C55E" },
+];
+
+function OperationsMetricsCard({ members }) {
+  const [rows, setRows] = useState(null);
+
+  useEffect(() => {
+    fetchAttendanceRowsForMetrics().then(setRows).catch(() => setRows([]));
+  }, [members]);
+
+  if (!rows) return null;
+  const riskCounts = countRiskLevels(members, computeAttendanceStats(rows));
+  const monthly = computeMonthlyOperations(rows).slice(-4);
+
+  return (
+    <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #22C55E33", marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", marginBottom: 4 }}>📈 운영 지표</div>
+      <div style={{ fontSize: 11, color: "#8899AA", marginBottom: 12 }}>출석률은 보강 출석 포함 · 이탈 위험은 연락 없는 결석(무단) 기준</div>
+
+      <div style={{ fontSize: 12, color: "#CBD5E1", fontWeight: 600, marginBottom: 8 }}>이탈 위험 단계별 회원 수</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
+        {RISK_TILES.map(t => (
+          <div key={t.key} style={{ background: `${t.color}14`, border: `1px solid ${t.color}33`, borderRadius: 10, padding: "10px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: t.color }}>{riskCounts[t.key]}</div>
+            <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>{t.key}</div>
+          </div>
+        ))}
+      </div>
+
+      {monthly.length > 0 && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 72px", gap: 8, fontSize: 11, color: "#8899AA", marginBottom: 6 }}>
+            <span>월</span><span>출석률</span><span style={{ textAlign: "right" }}>무단 결석 비율</span>
+          </div>
+          {monthly.map(m => (
+            <div key={m.month} style={{ display: "grid", gridTemplateColumns: "56px 1fr 72px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: "#CBD5E1" }}>{Number(m.month.slice(5))}월</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#ffffff11", overflow: "hidden" }}>
+                  <div style={{ width: `${m.attendanceRate ?? 0}%`, height: "100%", background: "#22C55E" }} />
+                </div>
+                <span style={{ fontSize: 12, color: "#CBD5E1", width: 36, textAlign: "right" }}>{m.attendanceRate ?? "-"}%</span>
+              </div>
+              <span style={{ fontSize: 12, color: m.unexcusedShare >= 50 ? "#FCA5A5" : "#CBD5E1", textAlign: "right" }}>
+                {m.unexcusedShare === null ? "-" : `${m.unexcusedShare}%`}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
 
 // ── 강사: 대시보드 ─────────────────────────────────────────
 export function CoachDashboard({ members, classes = [], pendingMembers = [], onApprove, onReject, onTogglePaid, pendingPayments = [], onConfirmPayment, makeupRequests = [], onAssignMakeup }) {
@@ -101,24 +163,40 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
           <div style={{ fontSize: 13, fontWeight: 700, color: "#8B5CF6", marginBottom: 12 }}>
             🏀 보강 신청 ({makeupRequests.length}건)
           </div>
-          {makeupRequests.map(r => (
-            <div key={r.id} style={{ padding: "10px 0", borderBottom: "1px solid #ffffff08" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{r.member_name}</div>
-                  <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>{r.class_title}</div>
-                  <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>
-                    {r.preferred_date && `📅 ${r.preferred_date}`}
-                    {r.preferred_time && ` · ${r.preferred_time === "morning" ? "오전" : r.preferred_time === "afternoon" ? "오후" : "저녁"}`}
+          {makeupRequests.map(r => {
+            // 회원이 수업 목록에서 고른 신청이면 그 수업·날짜로 바로 승인한다.
+            const requested = classes.find(c => c.id === r.requested_class_id);
+            return (
+              <div key={r.id} style={{ padding: "10px 0", borderBottom: "1px solid #ffffff08" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{r.member_name}</div>
+                    <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>결석 수업: {r.class_title}</div>
+                    {requested ? (
+                      <div style={{ fontSize: 12, color: "#C4B5FD", marginTop: 4, fontWeight: 600 }}>
+                        보강 신청: {r.preferred_date} · {requested.title} {requested.startTime}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: "#8899AA", marginTop: 2 }}>
+                        {r.preferred_date && `📅 ${r.preferred_date}`}
+                        {r.preferred_time && ` · ${r.preferred_time === "morning" ? "오전" : r.preferred_time === "afternoon" ? "오후" : "저녁"}`}
+                      </div>
+                    )}
+                    {r.note && <div style={{ fontSize: 11, color: "#FCD34D", marginTop: 4 }}>💬 {r.note}</div>}
                   </div>
-                  {r.note && <div style={{ fontSize: 11, color: "#FCD34D", marginTop: 4 }}>💬 {r.note}</div>}
+                  {requested ? (
+                    <button onClick={() => onAssignMakeup(r.id, { assignedClassId: requested.id, assignedDate: r.preferred_date, assignedMemo: "" })} style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, background: "#166534", color: "#86EFAC", flexShrink: 0, marginLeft: 8 }}>
+                      승인
+                    </button>
+                  ) : (
+                    <button onClick={() => openAssign(r)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, background: "#166534", color: "#86EFAC", flexShrink: 0, marginLeft: 8 }}>
+                      배정
+                    </button>
+                  )}
                 </div>
-                <button onClick={() => openAssign(r)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, background: "#166534", color: "#86EFAC", flexShrink: 0, marginLeft: 8 }}>
-                  배정
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -153,6 +231,9 @@ export function CoachDashboard({ members, classes = [], pendingMembers = [], onA
           </div>
         </div>
       )}
+
+      {/* 운영 지표 */}
+      <OperationsMetricsCard members={members} />
 
       {/* 위험 회원 현황 */}
       <div style={{ background: COLORS.NAVY, borderRadius: 12, padding: 16, border: "1px solid #ffffff11" }}>
@@ -244,7 +325,7 @@ function getClassDates(days, year, month) {
   return result;
 }
 
-export function CoachAttendance({ members, classes, attendance, cancellations, year, month, onMark, onCancellation, onMonthChange, onFeedback, feedback }) {
+export function CoachAttendance({ members, classes, attendance, absenceTypes = {}, makeups = {}, onSetAbsenceType, cancellations, year, month, onMark, onCancellation, onMonthChange, onFeedback, feedback }) {
   const [selectedClass, setSelectedClass] = useState(null);
   const [selectedDate, setSelectedDate]   = useState(null);
   const [filterDay, setFilterDay]         = useState(null);
@@ -277,6 +358,16 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
   const cancelled      = cancellations[selectedClass] ?? [];
   const enrolledMembers = selectedClass ? members.filter(m => (m.classes ?? []).includes(selectedClass)) : [];
   const dateAtt        = attendance[selectedClass]?.[selectedDate] ?? {};
+  const dateAbsenceTypes = absenceTypes[selectedClass]?.[selectedDate] ?? {};
+  // 이 날짜 이 수업에 승인된 보강 회원 (정규 수강생이 아닌 경우만)
+  const makeupMembers  = (makeups[selectedClass]?.[selectedDate] ?? [])
+    .filter(id => !enrolledMembers.some(m => m.id === id))
+    .map(id => members.find(m => m.id === id))
+    .filter(Boolean);
+  const attendanceRows = [
+    ...enrolledMembers.map(m => ({ member: m, isMakeup: false })),
+    ...makeupMembers.map(m => ({ member: m, isMakeup: true })),
+  ];
   const isCancelled    = selectedDate && cancelled.includes(selectedDate);
 
   const getAttended = () => Object.entries(dateAtt).filter(([,v]) => v === "출석").map(([id]) => members.find(m => m.id === parseInt(id))).filter(Boolean);
@@ -404,25 +495,44 @@ export function CoachAttendance({ members, classes, attendance, cancellations, y
                 </div>
               ) : (
                 <div style={{ background: COLORS.NAVY, borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff11", marginBottom: 16 }}>
-                  {enrolledMembers.length === 0
+                  {attendanceRows.length === 0
                     ? <div style={{ padding: 20, textAlign: "center", color: "#8899AA", fontSize: 13 }}>배정된 회원이 없습니다</div>
-                    : enrolledMembers.map(m => {
+                    : attendanceRows.map(({ member: m, isMakeup }) => {
                         const status = dateAtt[m.id];
+                        const absenceType = dateAbsenceTypes[m.id] ?? "무단";
                         return (
-                          <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #ffffff08" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <MemberAvatar member={m} />
-                              <div style={{ fontSize: 14 }}>{m.name}</div>
+                          <div key={m.id} style={{ padding: "12px 16px", borderBottom: "1px solid #ffffff08" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <MemberAvatar member={m} />
+                                <div style={{ fontSize: 14 }}>{m.name}</div>
+                                {isMakeup && (
+                                  <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "#F59E0B22", color: "#F59E0B", fontWeight: 700 }}>보강</span>
+                                )}
+                              </div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                {["출석", "결석"].map(s => (
+                                  <button key={s} onClick={() => onMark(selectedClass, m.id, selectedDate, s, { isMakeup })} style={{
+                                    padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit",
+                                    background: status === s ? (s === "출석" ? "#166534" : "#7F1D1D") : "#ffffff11",
+                                    color:      status === s ? (s === "출석" ? "#86EFAC" : "#FCA5A5") : "#8899AA",
+                                  }}>{s}</button>
+                                ))}
+                              </div>
                             </div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              {["출석", "결석"].map(s => (
-                                <button key={s} onClick={() => onMark(selectedClass, m.id, selectedDate, s)} style={{
-                                  padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit",
-                                  background: status === s ? (s === "출석" ? "#166534" : "#7F1D1D") : "#ffffff11",
-                                  color:      status === s ? (s === "출석" ? "#86EFAC" : "#FCA5A5") : "#8899AA",
-                                }}>{s}</button>
-                              ))}
-                            </div>
+                            {/* 결석이면 사유 선택: 이탈 위험은 연락 없는 결석(무단)만 센다 */}
+                            {status === "결석" && (
+                              <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }}>
+                                {["사전연락", "무단"].map(t => (
+                                  <button key={t} onClick={() => onSetAbsenceType(selectedClass, m.id, selectedDate, t, { isMakeup })} style={{
+                                    padding: "4px 12px", borderRadius: 20, cursor: "pointer", fontSize: 12, fontFamily: "inherit",
+                                    border: `1px solid ${absenceType === t ? (t === "무단" ? "#EF4444" : "#3B82F6") : "#ffffff22"}`,
+                                    background: absenceType === t ? (t === "무단" ? "#EF444422" : "#3B82F622") : "transparent",
+                                    color:      absenceType === t ? (t === "무단" ? "#FCA5A5" : "#93C5FD") : "#8899AA",
+                                  }}>{t === "사전연락" ? "사전 연락" : "무단"}</button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })

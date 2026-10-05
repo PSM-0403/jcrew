@@ -1,6 +1,7 @@
 // ── 이탈 위험 회원 분석 ────────────────────────────────────
 import { callAI } from "../api/openai";
 import { fetchAllAttendanceStats, saveAgentResult, updateMemberRiskAlert } from "../api/db";
+import { classifyRisk, RISK_ORDER } from "../analytics/attendanceMetrics";
 
 export async function runChurnAgent(members, { addLog }) {
   addLog("📊 [이탈 위험 회원 분석] 시작", "start");
@@ -8,24 +9,16 @@ export async function runChurnAgent(members, { addLog }) {
 
   const stats = await fetchAllAttendanceStats();
 
+  // 위험 단계 규칙은 analytics/attendanceMetrics.js의 classifyRisk에 정의돼 있다.
   const memberStats = members.map(m => {
-    const s = stats[m.id] ?? { total: 0, recentAbsent: 0, consecutiveAbsent: 0, rate: null };
+    const s = stats[m.id] ?? { total: 0, consecutiveUnexcused: 0, recentUnexcused: 0, rate: null };
     const rate = s.rate ?? m.attendance ?? 100;
-    const hasData = s.total >= 5;
-
-    let riskLevel = null;
-    if (s.consecutiveAbsent >= 3 && !m.paid)       riskLevel = "매우높음";
-    else if (s.consecutiveAbsent >= 3)              riskLevel = "높음";
-    else if (!m.paid && hasData && rate < 60)       riskLevel = "높음";
-    else if (hasData && rate < 50)                  riskLevel = "보통";
-    else if (!m.paid && hasData && rate < 70)       riskLevel = "보통";
-
-    return { ...m, realRate: rate, stats: s, riskLevel };
+    return { ...m, realRate: rate, stats: s, riskLevel: classifyRisk(m, s) };
   });
 
   const riskMembers = memberStats
     .filter(m => m.riskLevel)
-    .sort((a, b) => ({ "매우높음": 0, "높음": 1, "보통": 2 }[a.riskLevel] - { "매우높음": 0, "높음": 1, "보통": 2 }[b.riskLevel]));
+    .sort((a, b) => RISK_ORDER[a.riskLevel] - RISK_ORDER[b.riskLevel]);
 
   addLog(`⚠ 위험 회원 ${riskMembers.length}명 감지`, "warn");
 
@@ -49,7 +42,7 @@ export async function runChurnAgent(members, { addLog }) {
   addLog("🤖 AI 코멘트 생성 중...", "think");
 
   const memberList = riskMembers.map(m =>
-    `${m.name}: 출석률 ${m.realRate}%, ${m.paid ? "납부완료" : "미납"}, 연속결석 ${m.stats.consecutiveAbsent}회`
+    `${m.name}: 출석률 ${m.realRate}%, ${m.paid ? "납부완료" : "미납"}, 연속 무단결석 ${m.stats.consecutiveUnexcused}회, 최근 5회 중 무단 ${m.stats.recentUnexcused}회`
   ).join("\n");
 
   let aiLines = [];
@@ -75,7 +68,7 @@ export async function runChurnAgent(members, { addLog }) {
   }
 
   const result = riskMembers.map(m =>
-    `[${m.riskLevel}] ${m.name} — 출석률 ${m.realRate}%, ${m.paid ? "납부완료" : "미납"}, 연속결석 ${m.stats.consecutiveAbsent}회`
+    `[${m.riskLevel}] ${m.name} — 출석률 ${m.realRate}%, ${m.paid ? "납부완료" : "미납"}, 연속 무단결석 ${m.stats.consecutiveUnexcused}회, 최근 5회 중 무단 ${m.stats.recentUnexcused}회`
   ).join("\n");
 
   addLog("💾 저장 중...", "info");
