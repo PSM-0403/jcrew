@@ -202,7 +202,8 @@ export default function App() {
   };
 
   // ── 화면 분기 ─────────────────────────────────────────────
-  if (loading) return (
+  // 로그인 직후 데이터가 오기 전(회원은 본인 정보 me가 없을 때)에는 화면을 그리지 않음
+  if (loading || (role === "member" && !me)) return (
     <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: COLORS.DARK, color: "#fff", flexDirection: "column", gap: 16 }}>
       <div style={{ fontSize: 40 }}>🏀</div>
       <div style={{ fontSize: 14, color: COLORS.TEXT_MUTED }}>데이터 로딩 중...</div>
@@ -212,8 +213,8 @@ export default function App() {
   if (showSignup) return <SignupPage onSignup={signup} onBack={() => setShowSignup(false)} />;
   if (!role) return (
     <LoginPage
-      onCoach={() => { setRole("coach"); setTab("home"); }}
-      onMember={(id) => { setMemberId(id); setRole("member"); setTab("home"); }}
+      onCoach={() => { setLoading(true); setRole("coach"); setTab("home"); }}
+      onMember={(id) => { setLoading(true); setMemberId(id); setRole("member"); setTab("home"); }}
       onSignup={() => setShowSignup(true)}
     />
   );
