@@ -150,9 +150,13 @@ export async function updateMemberProfile(id, data) {
     address:       data.address,
     note:          data.note,
   };
-  if (data.password) fields.password = data.password;
   const { error } = await supabase.from('members').update(fields).eq('id', id);
   if (error) throw error;
+  // 비밀번호는 members가 아니라 member_credentials에 해시로 저장 (DB 함수가 토큰의 본인 id로 처리)
+  if (data.password) {
+    const { error: pwError } = await supabase.rpc('change_my_password', { p_new: data.password });
+    if (pwError) throw pwError;
+  }
 }
 
 export async function updateMemberInfo(id, data) {

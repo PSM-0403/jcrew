@@ -153,8 +153,9 @@
 | 출석률과 이탈 신호 분리 | 출석률은 보강 출석까지 포함하고, 이탈 신호는 무단 결석만 셈. 지표 정의는 `src/analytics/attendanceMetrics.js`에서 관리 |
 | hidden_by_coach 컬럼 | 강사가 채팅방을 나가도 회원 메시지 이력은 유지 (비대칭 삭제) |
 | Vercel Serverless Function 프록시 | OpenAI API 키를 서버사이드에서만 사용, 브라우저 번들 노출 차단 |
-| 로그인 서버사이드 처리 | 회원 비밀번호를 클라이언트에 노출하지 않도록 인증 로직을 Vercel Serverless Function으로 이동 |
-| Supabase RLS 활성화 | 전체 테이블 Row-Level Security 적용으로 비인가 접근 차단 |
+| 로그인 서버사이드 처리 | 강사·회원 로그인을 Vercel Serverless Function에서 확인하고, 역할(coach/member)과 회원 id가 담긴 JWT를 발급 |
+| 비밀번호 bcrypt 해시 분리 | 평문 비밀번호를 `member_credentials` 테이블에 bcrypt 해시로 옮기고(73건), 비교는 DB 함수 안에서만 처리. 이 테이블은 정책이 없어 서버만 접근 |
+| 역할별 RLS 정책 | 처음에는 RLS가 켜져 있어도 정책이 anon에게 전체 허용(true)이라 공개 키로 모든 데이터에 접근 가능했음 → anon 권한 회수, 강사는 전체, 회원은 본인 출결·납부·채팅·보강만 (`supabase/security/`) |
 | PWA 적용 | 홈 화면 설치·전체화면 실행으로 네이티브 앱에 가까운 UX 제공 |
 
 ---
@@ -164,6 +165,7 @@
 | 테이블 | 용도 |
 |---|---|
 | members | 회원 정보 (상태: pending/active/deleted) |
+| member_credentials | 회원 비밀번호 bcrypt 해시 (서버 전용) |
 | classes | 수업 정보 |
 | enrollments | 수업-회원 매핑 |
 | attendance | 출결 기록 (결석 사유 absence_type: 사전연락/무단, 보강 여부 is_makeup) |
@@ -202,7 +204,12 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 **Vercel 환경변수 (서버사이드 전용)**
 ```
 OPENAI_API_KEY=your_openai_api_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_JWT_SECRET=your_jwt_secret
+COACH_PASSWORD=your_coach_password
 ```
+
+DB 보안 설정은 `supabase/security/`의 SQL을 00 → 04 순서로 실행합니다.
 
 ---
 
@@ -210,5 +217,5 @@ OPENAI_API_KEY=your_openai_api_key
 
 | 구분 | 방법 |
 |---|---|
-| 강사 | 비밀번호 입력(jcrew1234) |
+| 강사 | 비밀번호 입력 (환경 변수로 관리, 공개하지 않음) |
 | 회원 | 이름(피수민) + 연락처 뒷 4자리(2358) + 비밀번호(0000) |
