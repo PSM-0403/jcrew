@@ -1,6 +1,13 @@
+import { verifyRequest } from "./_auth.js";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // 로그인한 사용자만 OpenAI 키를 쓸 수 있게
+  if (!verifyRequest(req)) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   const { messages } = req.body;

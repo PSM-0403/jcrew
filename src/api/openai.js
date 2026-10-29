@@ -1,3 +1,5 @@
+import { getAccessToken } from "./supabase";
+
 export async function callAI(prompt, systemPrompt = "") {
   const messages = [];
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
@@ -9,7 +11,7 @@ export async function callAI(prompt, systemPrompt = "") {
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getAccessToken()}` },
       body: JSON.stringify({ messages }),
       signal: controller.signal,
     });

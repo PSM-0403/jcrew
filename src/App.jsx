@@ -6,7 +6,7 @@ import { useClassStore }       from "./stores/classStore";
 import { useAttendanceStore }  from "./stores/attendanceStore";
 
 import { updateMemberPaid, addPayment, enrollMember, unenrollMember, insertPendingPayment, deletePendingPayment, insertMakeupRequest, assignMakeupRequest, fetchMemberUnreadCount, sendMessage } from "./api/db";
-import { supabase } from "./api/supabase";
+import { supabase, setAccessToken } from "./api/supabase";
 
 import { Toast, TabBar }   from "./components/Common";
 import { LoginPage, SignupPage } from "./pages/Login";
@@ -70,8 +70,10 @@ export default function App() {
     if (!isCoach && tab === "messages") setMemberUnread(0);
   }, [tab]);
 
-  // ── 초기 로드 ─────────────────────────────────────────────
+  // ── 초기 로드 (로그인 후 토큰이 생긴 뒤에 읽어야 RLS를 통과) ──
   useEffect(() => {
+    if (!role) { setLoading(false); return; }
+    setLoading(true);
     async function load() {
       try {
         await Promise.all([
@@ -88,7 +90,7 @@ export default function App() {
       }
     }
     load();
-  }, []);
+  }, [role]);
 
   // ── 핸들러 ────────────────────────────────────────────────
   const handleBankPaymentRequest = async (memo) => {
@@ -251,7 +253,7 @@ export default function App() {
           </div>
         </div>
         <button
-          onClick={() => { setRole(null); setTab("home"); }}
+          onClick={() => { setAccessToken(null); setRole(null); setTab("home"); }}
           aria-label="로그아웃"
           style={{ fontSize: 12, color: COLORS.TEXT_MUTED, background: "none", border: "none", cursor: "pointer" }}
         >

@@ -1,25 +1,30 @@
+import { issueToken, callRpc, safeEqual } from './_auth.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { name, phone4, password } = req.body ?? {};
-  if (!name || !phone4 || !password) return res.status(400).json({ error: 'Missing fields' });
+  const { mode, name, phone4, password } = req.body ?? {};
 
-  const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  try {
+    // 강사 비밀번호는 코드에 두지 않고 Vercel 환경 변수로만 관리
+    if (mode === 'coach') {
+      const coachPw = process.env.COACH_PASSWORD;
+      if (!coachPw || !password || !safeEqual(password, coachPw)) {
+        return res.status(401).json({ error: '비밀번호가 올바르지 않습니다.' });
+      }
+      return res.status(200).json({ token: issueToken({ appRole: 'coach' }) });
+    }
 
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/members?status=eq.active&select=id,name,phone,password`, {
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-    },
-  });
+    if (!name || !phone4 || !password) return res.status(400).json({ error: 'Missing fields' });
 
-  const members = await resp.json();
-  const found = members.find(m => {
-    const last4 = (m.phone ?? '').replace(/\D/g, '').slice(-4);
-    return m.name === name.trim() && last4 === phone4 && m.password === password;
-  });
+    // 비밀번호 비교는 DB 안에서 bcrypt 해시로 처리하고, 일치한 회원 id만 돌려받는다
+    const id = await callRpc('verify_member_login', {
+      p_name: name, p_phone4: phone4, p_password: password,
+    });
+    if (!id) return res.status(401).json({ error: '이름, 연락처 뒷 4자리 또는 비밀번호가 올바르지 않습니다.' });
 
-  if (found) return res.status(200).json({ id: found.id });
-  return res.status(401).json({ error: '이름, 연락처 뒷 4자리 또는 비밀번호가 올바르지 않습니다.' });
+    return res.status(200).json({ id, token: issueToken({ appRole: 'member', memberId: id }) });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 }

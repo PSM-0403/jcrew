@@ -100,25 +100,17 @@ export async function fetchPendingMembers() {
   return (data ?? []).map(r => ({ ...toMember(r), pendingId: r.id }));
 }
 
+// 가입 신청은 로그인 전이라 토큰이 없으므로 서버 함수에서 비밀번호를 해시해 저장
 export async function insertMember(data) {
-  const { error } = await supabase.from('members').insert({
-    name: data.name,
-    password: data.password,
-    phone: data.parentPhone || data.studentPhone || '',
-    category: data.schoolLevel || data.category || '성인',
-    school_level: data.schoolLevel ?? '',
-    school_name: data.schoolName ?? '',
-    grade: data.grade ?? '',
-    gender: data.gender ?? '',
-    student_phone: data.studentPhone ?? '',
-    shuttle: data.shuttle ?? false,
-    address: data.address ?? '',
-    paid: false,
-    attendance: 100,
-    note: data.note ?? '',
-    status: 'pending',
+  const res = await fetch('/api/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
   });
-  if (error) throw error;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? 'signup failed');
+  }
 }
 
 export async function approveMember(id) {
@@ -232,16 +224,13 @@ export async function enrollMember(memberId, classId) {
   const { error } = await supabase.from('enrollments')
     .insert({ member_id: memberId, class_id: classId });
   if (error) throw error;
-  const { data } = await supabase.from('classes').select('enrolled').eq('id', classId).single();
-  await supabase.from('classes').update({ enrolled: (data?.enrolled ?? 0) + 1 }).eq('id', classId);
+  // classes.enrolled는 enrollments 트리거가 갱신
 }
 
 export async function unenrollMember(memberId, classId) {
   const { error } = await supabase.from('enrollments')
     .delete().eq('member_id', memberId).eq('class_id', classId);
   if (error) throw error;
-  const { data } = await supabase.from('classes').select('enrolled').eq('id', classId).single();
-  await supabase.from('classes').update({ enrolled: Math.max(0, (data?.enrolled ?? 1) - 1) }).eq('id', classId);
 }
 
 // ── Payments ──────────────────────────────────────────────────

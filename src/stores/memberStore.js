@@ -17,11 +17,14 @@ export const useMemberStore = create((set, get) => ({
     set({ members: mbrs, pendingMembers: pend });
   },
 
-  // 가입신청: DB 생성 후 ID가 필요해서 API-first
+  // 가입신청: 로그인 전이라 대기 목록은 다시 읽지 않음 (강사 로그인 시 로드)
   signup: async (form) => {
-    await insertMember(form);
-    const pend = await fetchPendingMembers();
-    set({ pendingMembers: pend });
+    try {
+      await insertMember(form);
+    } catch {
+      toast('가입 신청 실패. 잠시 후 다시 시도해주세요.', 'err');
+      return;
+    }
     useAppStore.getState().setShowSignup(false);
     toast(`${form.name}님 가입 신청 완료! 관리자 승인 후 로그인 가능합니다.`);
   },

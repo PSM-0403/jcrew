@@ -1,8 +1,19 @@
 import { useState } from "react";
 import { COLORS } from "../constants";
 import logo from "../assets/logo.png";
+import { setAccessToken } from "../api/supabase";
 
-const COACH_PASSWORD = "jcrew1234";
+// 강사·회원 모두 서버(/api/login)에서 확인하고, 받은 토큰으로 DB에 접근
+async function requestLogin(body) {
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (res.ok && data.token) setAccessToken(data.token);
+  return { ok: res.ok && !!data.token, data };
+}
 
 export function LoginPage({ onCoach, onMember, onSignup }) {
   const [mode, setMode]     = useState(null); // null | "coach" | "member"
@@ -13,21 +24,22 @@ export function LoginPage({ onCoach, onMember, onSignup }) {
 
   const reset = () => { setMode(null); setName(""); setPhone4(""); setPw(""); setError(""); };
 
-  const handleCoachSubmit = () => {
-    if (pw === COACH_PASSWORD) { onCoach(); }
-    else { setError("비밀번호가 올바르지 않습니다."); setPw(""); }
+  const handleCoachSubmit = async () => {
+    setError("");
+    try {
+      const { ok, data } = await requestLogin({ mode: "coach", password: pw });
+      if (ok) { onCoach(); }
+      else { setError(data.error ?? "비밀번호가 올바르지 않습니다."); setPw(""); }
+    } catch {
+      setError("서버 오류. 잠시 후 다시 시도해주세요."); setPw("");
+    }
   };
 
   const handleMemberSubmit = async () => {
     setError("");
     try {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), phone4, password: pw }),
-      });
-      const data = await res.json();
-      if (res.ok && data.id) { onMember(data.id); }
+      const { ok, data } = await requestLogin({ name: name.trim(), phone4, password: pw });
+      if (ok && data.id) { onMember(data.id); }
       else { setError(data.error ?? "로그인 실패"); setPw(""); }
     } catch {
       setError("서버 오류. 잠시 후 다시 시도해주세요."); setPw("");
